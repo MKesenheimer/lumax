@@ -1,5 +1,2 @@
 .DS_Store
-*.dylib
-*.so
 *.o
-main
