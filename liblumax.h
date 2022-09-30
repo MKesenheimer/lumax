@@ -1,6 +1,8 @@
 #pragma once
 
+#ifndef WINDOWS
 uint32_t timeGetTime();
+#endif
 
 int ftHandle(int numDev, void **ftHandle);
 
