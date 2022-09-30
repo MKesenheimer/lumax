@@ -10,6 +10,7 @@
 #include <time.h>
 #include <math.h>
 #include <string.h>
+#include <stdint.h>
 
 #include "lumax.h"
 #include "liblumax.h"

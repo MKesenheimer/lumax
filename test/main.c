@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <unistd.h>
+#include <stdint.h>
 #include "lumax.h"
 
 // TODO
