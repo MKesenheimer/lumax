@@ -4,7 +4,7 @@
 # Arch Linux: https://aur.archlinux.org/packages/libftd2xx
 
 # macOS, linux, windows
-platform=windows
+platform=macOS
 
 # macOS
 if [ "$platform" == "macOS" ]; then
@@ -23,8 +23,8 @@ fi
 
 # Windows
 if [ "$platform" == "windows" ]; then
-  x86_64-w64-mingw32-cc -DWINDOWS -c -I./FTD2XX/extracted liblumax.c
-  x86_64-w64-mingw32-cc -shared -fPIC -o liblumax_win32.so liblumax.o -L./FTD2XX/extracted/amd64 -lwinmm -lftd2xx
+  i686-w64-mingw32-gcc -DWINDOWS -c -I./FTD2XX/extracted liblumax.c
+  i686-w64-mingw32-gcc -shared -fPIC -o liblumax_win32.so liblumax.o -L./FTD2XX/extracted/i386 -lwinmm -lftd2xx
 fi
 
 # Linux

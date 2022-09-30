@@ -1,6 +1,6 @@
 #!/bin/bash
 
-platform=linux
+platform=windows
 
 # compile the main test application
 # macOS
@@ -18,4 +18,9 @@ if [ "$platform" == "linux" ]; then
   #readelf -d main | head -20
 
   gcc -Wl,-rpath='$ORIGIN' main.c -o main -I.. -L. -lm -llumax_linux
+fi
+
+# windows
+if [ "$platform" == "windows" ]; then
+  i686-w64-mingw32-gcc main.c -o main.exe -I.. -L. -lm -llumax_windows
 fi
