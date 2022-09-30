@@ -28,6 +28,13 @@ fi
 if [ "$platform" == "linux" ]; then
   gcc -c -fPIC -I/usr/include liblumax.c
   gcc -shared -fPIC -o liblumax_linux.so liblumax.o -L/usr/include -lftd2xx
+
+  # create rules for this usb device
+  # /etc/udev/rules.d/87-lumax.rules
+  sudo cp 87-lumax.rules /etc/udev/rules.d/87-lumax.rules
+  # /etc/udev/rules.d/89-lumax.rules
+  sudo cp 89-lumax.rules /etc/udev/rules.d/89-lumax.rules
+  sudo udevadm trigger
 fi
 
 # move the libraries to the libs folder

@@ -54,7 +54,7 @@ uint32_t IsBusy = 0; // flags[30], pos = 1432
 uint32_t BusyTime; // flags[37], pos = 1460
 
 // DEBUG Flags
-uint32_t lumax_verbosity = DBG_INFO | DBG_GENERAL | DBG_WRITETODEV;
+uint32_t lumax_verbosity = 0; //DBG_INFO | DBG_GENERAL | DBG_WRITETODEV;
 
 // Done
 uint32_t timeGetTime() {
