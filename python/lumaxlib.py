@@ -8,7 +8,10 @@ lib_path = 'libs/liblumax_%s.so' % (sys.platform)
 try:
     lumax_lib = CDLL(lib_path)
 except:
-    print('OS %s not recognized' % (sys.platform))
+    try:
+        lumax_lib = CDLL('libs/lumax.dll')
+    except:
+        print('OS %s not recognized or library not found.' % (sys.platform))
 
 class lpoint(Structure):
     #_pack_=2
@@ -107,7 +110,3 @@ def StopFrame(handle):
 def CloseDevice(handle):
     global lumax_lib
     return int(lumax_lib.Lumax_CloseDevice(c_void_p(handle)))
-
-#if __name__ == "__main__":
-#    import sys
-#    fib(int(sys.argv[1]))
