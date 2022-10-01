@@ -54,7 +54,7 @@ uint32_t IsBusy = 0; // flags[30], pos = 1432
 uint32_t BusyTime; // flags[37], pos = 1460
 
 // DEBUG Flags
-uint32_t lumax_verbosity = 0; //DBG_INFO | DBG_GENERAL | DBG_WRITETODEV;
+uint32_t lumax_verbosity = 0; // DBG_INFO | DBG_SENDFRAME;
 
 // Done
 #ifndef WINDOWS
@@ -589,6 +589,15 @@ int Lumax_SendFrame(void *handle, TLumax_Point *points, int numOfPoints, int sca
     TLumax_Point *lpoints;
     lpoints = points;
     int result = 1;
+
+#ifdef DEBUG_POSSIBLE
+    if (lumax_verbosity & DBG_SENDFRAME) {
+        printf("[DEBUG] Lumax_SendFrame: Device handle = 0x%x.\n", (unsigned int)handle);
+        printf("[DEBUG] Lumax_SendFrame: numOfPoints = %d.\n", numOfPoints);
+        for (int i = 0; i < numOfPoints; ++i)
+            printf("[DEBUG] Lumax_SendFrame: point%d: CH1 = %d, CH2 = %d, CH3 = %d, CH4 = %d, CH5 = %d.\n", i, lpoints[i].Ch1, lpoints[i].Ch2, lpoints[i].Ch3, lpoints[i].Ch4, lpoints[i].Ch5);
+    }
+#endif
 
     // if buffer is empty (initialization)
     if (!numOfPoints) {
