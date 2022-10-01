@@ -98,7 +98,6 @@ def WaitForBuffer(handle, timeOut):
 def SendFrame(handle, points, scanSpeed, updateMode):
     global lumax_lib
     numOfPoints = points.length
-    #print("SendFrame: numOfPoints = {}".format(numOfPoints))
     timeToWait = c_int(0)
     ret = lumax_lib.Lumax_SendFrame(c_void_p(handle), points.struct_arr, c_int(numOfPoints), c_int(scanSpeed), c_int(updateMode), byref(timeToWait))
     return int(ret), int.from_bytes(timeToWait, byteorder='big', signed=True)

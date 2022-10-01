@@ -45,7 +45,7 @@ mv *.so *.dylib libs
 rm *.o
 
 # copy files for the test application
-cp libs/*.dylib libs/*.so libs/*.dll test
+cp libs/*.dylib libs/*.so libs/*.dll lumax.h test
 
 # copy files for the python interface
 cp -r libs python
