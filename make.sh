@@ -3,8 +3,14 @@
 # All Platforms: https://ftdichip.com/drivers/d2xx-drivers/
 # Arch Linux: https://aur.archlinux.org/packages/libftd2xx
 
+
+if [ "$1" == "" ]; then
+  echo "Usage: ./make.sh <platform: macOS | linux | windows>"
+  exit -1
+fi
+
 # macOS, linux, windows
-platform=macOS
+platform=$1
 
 # macOS
 if [ "$platform" == "macOS" ]; then
