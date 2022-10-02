@@ -1,2 +1,10 @@
 .DS_Store
 *.o
+libs
+python/libs
+test/*.dylib
+test/*.so
+test/*.dll
+test/*.exe
+test/main_linux
+test/main_darwin
