@@ -115,7 +115,7 @@ int Lumax_SetDmxMode(void *handle, uint8_t a2, uint8_t a3);
 void* Lumax_OpenDevice(int numDev, int channel);
 
 // DEBUG Flags
-#define DEBUG_POSSIBLE
+//#define DEBUG_POSSIBLE
 const uint32_t DBG_INFO = 1;
 const uint32_t DBG_GENERAL = 2;
 const uint32_t DBG_WRITETODEV = 4;
