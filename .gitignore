@@ -2,6 +2,7 @@
 *.o
 libs
 python/libs
+test/lumax.h
 test/*.dylib
 test/*.so
 test/*.dll
