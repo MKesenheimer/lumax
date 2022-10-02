@@ -15,15 +15,15 @@ except:
 
 class lpoint(Structure):
     #_pack_=2
-    _fields_ = [("x", c_int, 16),
-                ("y", c_int, 16),
-                ("r", c_int, 16),
-                ("g", c_int, 16),
-                ("b", c_int, 16),
-                ("Ch6", c_int, 16),
-                ("Ch7", c_int, 16),
-                ("Ch8", c_int, 16),
-                ("TTL", c_int, 16)]
+    _fields_ = [("x", c_uint16),
+                ("y", c_uint16),
+                ("r", c_uint16),
+                ("g", c_uint16),
+                ("b", c_uint16),
+                ("Ch6", c_uint16),
+                ("Ch7", c_uint16),
+                ("Ch8", c_uint16),
+                ("TTL", c_uint16)]
 c_point_p = POINTER(lpoint)
 
 class lpoints(Structure):
