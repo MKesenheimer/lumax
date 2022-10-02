@@ -1,6 +1,7 @@
 #!/bin/sh
 
-rm libs/*
-rm python/libs/*
-rm test/lumax.h
-rm test/*.so test/*.dylib test/*.exe test/main_* test/*.dll
+#rm -f libs/*
+rm -f python/libs/*
+rm -f test/lumax.h
+rm -f test/libs/*
+rm -f test/*.exe test/main_*
