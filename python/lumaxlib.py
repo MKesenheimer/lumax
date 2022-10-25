@@ -3,6 +3,7 @@ Define the C-variables and functions from the C-files that are needed in Python
 """
 from ctypes import *
 import sys
+import math
 
 lib_path = 'libs/liblumax_%s.so' % (sys.platform)
 try:
@@ -72,40 +73,50 @@ lumax_lib.Lumax_CloseDevice.argtypes = (c_void_p,)
 lumax_lib.Lumax_CloseDevice.restype = c_int
 
 
-def GetApiVersion():
-    global lumax_lib
-    return int(lumax_lib.Lumax_GetApiVersion())
+class lumax:
+    def get_api_version():
+        global lumax_lib
+        return int(lumax_lib.Lumax_GetApiVersion())
 
-def GetPhysicalDevices():
-    global lumax_lib
-    return int(lumax_lib.Lumax_GetPhysicalDevices())
+    def get_physical_devices():
+        global lumax_lib
+        return int(lumax_lib.Lumax_GetPhysicalDevices())
 
-def OpenDevice(numDev, channel):
-    global lumax_lib
-    return int(lumax_lib.Lumax_OpenDevice(c_int(numDev), c_int(channel)))
+    def open_device(numDev, channel):
+        global lumax_lib
+        try:
+            return int(lumax_lib.Lumax_OpenDevice(c_int(numDev), c_int(channel)))
+        except:
+            return 0
 
-def SetTTL(handle, ttl):
-    global lumax_lib
-    return int(lumax_lib.Lumax_SetTTL(c_void_p(handle), c_int(ttl)))
+    def setTTL(handle, ttl):
+        global lumax_lib
+        return int(lumax_lib.Lumax_SetTTL(c_void_p(handle), c_int(ttl)))
 
-def WaitForBuffer(handle, timeOut):
-    global lumax_lib
-    timeToWait = c_int(0)
-    bufferChanged = c_int(0)
-    ret = lumax_lib.Lumax_WaitForBuffer(c_void_p(handle), c_int(timeOut), byref(timeToWait), byref(bufferChanged))
-    return int(ret), int.from_bytes(timeToWait, byteorder='big', signed=True), int.from_bytes(bufferChanged, byteorder='big', signed=True)
+    def wait_for_buffer(handle, timeOut):
+        global lumax_lib
+        timeToWait = c_int(0)
+        bufferChanged = c_int(0)
+        ret = lumax_lib.Lumax_WaitForBuffer(c_void_p(handle), c_int(timeOut), byref(timeToWait), byref(bufferChanged))
+        return int(ret), int.from_bytes(timeToWait, byteorder='big', signed=True), int.from_bytes(bufferChanged, byteorder='big', signed=True)
 
-def SendFrame(handle, points, scanSpeed, updateMode):
-    global lumax_lib
-    numOfPoints = points.length
-    timeToWait = c_int(0)
-    ret = lumax_lib.Lumax_SendFrame(c_void_p(handle), points.struct_arr, c_int(numOfPoints), c_int(scanSpeed), c_int(updateMode), byref(timeToWait))
-    return int(ret), int.from_bytes(timeToWait, byteorder='big', signed=True)
+    def send_frame(handle, points, scanSpeed, updateMode):
+        global lumax_lib
+        numOfPoints = points.length
+        timeToWait = c_int(0)
+        ret = lumax_lib.Lumax_SendFrame(c_void_p(handle), points.struct_arr, c_int(numOfPoints), c_int(scanSpeed), c_int(updateMode), byref(timeToWait))
+        return int(ret), int.from_bytes(timeToWait, byteorder='big', signed=True)
 
-def StopFrame(handle):
-    global lumax_lib
-    return int(lumax_lib.Lumax_StopFrame(c_void_p(handle)))
+    def stop_frame(handle):
+        global lumax_lib
+        return int(lumax_lib.Lumax_StopFrame(c_void_p(handle)))
 
-def CloseDevice(handle):
-    global lumax_lib
-    return int(lumax_lib.Lumax_CloseDevice(c_void_p(handle)))
+    def close_device(handle):
+        global lumax_lib
+        return int(lumax_lib.Lumax_CloseDevice(c_void_p(handle)))
+
+    def circle_point(x, y, r, i, ntotalpoints):
+        th = 2 * math.pi / ntotalpoints * i
+        xunit = int(r * math.cos(th) + x)
+        yunit = int(r * math.sin(th) + y)
+        return xunit, yunit
