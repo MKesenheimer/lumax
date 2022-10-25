@@ -47,8 +47,12 @@ if [ "$platform" == "linux" ]; then
 fi
 
 # move the libraries to the libs folder
-mv *.so *.dylib libs
+mv *.so libs
 rm *.o
+if [ "$platform" == "macOS" ]; then
+  mv *.dylib libs
+fi
+
 
 # copy files for the test application
 cp -r libs lumax.h test
