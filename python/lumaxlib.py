@@ -5,15 +5,6 @@ from ctypes import *
 import sys
 import math
 
-lib_path = 'libs/liblumax_%s.so' % (sys.platform)
-try:
-    lumax_lib = CDLL(lib_path)
-except:
-    try:
-        lumax_lib = CDLL('libs/lumax.dll')
-    except:
-        print('OS %s not recognized or library not found.' % (sys.platform))
-
 class lpoint(Structure):
     #_pack_=2
     _fields_ = [("x", c_uint16),
@@ -44,36 +35,53 @@ class lpoints(Structure):
             self.struct_arr[num].r = 0
             self.struct_arr[num].g = 0
             self.struct_arr[num].b = 0
-
-
-c_int_p = POINTER(c_int)
-
-lumax_lib.Lumax_GetApiVersion.argtypes = None
-lumax_lib.Lumax_GetApiVersion.restype = c_int
-
-lumax_lib.Lumax_GetPhysicalDevices.argtypes = None
-lumax_lib.Lumax_GetPhysicalDevices.restype = c_int
-
-lumax_lib.Lumax_OpenDevice.argtypes = (c_int, c_int)
-lumax_lib.Lumax_OpenDevice.restype = c_void_p
-
-lumax_lib.Lumax_SetTTL.argtypes = (c_void_p, c_int)
-lumax_lib.Lumax_SetTTL.restype = c_int
-
-lumax_lib.Lumax_WaitForBuffer.argtypes = (c_void_p, c_int, c_int_p, c_int_p)
-lumax_lib.Lumax_WaitForBuffer.restype = c_int
-
-lumax_lib.Lumax_SendFrame.argtypes = (c_void_p, c_point_p, c_int, c_int, c_int, c_int_p)
-lumax_lib.Lumax_SendFrame.restype = c_int
-
-lumax_lib.Lumax_StopFrame.argtypes = (c_void_p,)
-lumax_lib.Lumax_StopFrame.restype = c_int
-
-lumax_lib.Lumax_CloseDevice.argtypes = (c_void_p,)
-lumax_lib.Lumax_CloseDevice.restype = c_int
-
-
+        
 class lumax:
+    global lumax_lib
+    lib_path = './lumax/python/libs/liblumax_%s.so' % (sys.platform)
+    try:
+        lumax_lib = CDLL(lib_path)
+    except:
+        try:
+            lumax_lib = CDLL('./lumax/python/libs/lumax.dll')
+        except:
+            lib_path = './libs/liblumax_%s.so' % (sys.platform)
+            try:
+                lumax_lib = CDLL(lib_path)
+            except:
+                try:
+                    lumax_lib = CDLL('./libs/lumax.dll')
+                except:
+                    print('OS %s not recognized or library not found.' % (sys.platform))
+
+    c_int_p = POINTER(c_int)
+    
+    lumax_lib.Lumax_GetApiVersion.argtypes = None
+    lumax_lib.Lumax_GetApiVersion.restype = c_int
+    
+    lumax_lib.Lumax_GetPhysicalDevices.argtypes = None
+    lumax_lib.Lumax_GetPhysicalDevices.restype = c_int
+    
+    lumax_lib.Lumax_OpenDevice.argtypes = (c_int, c_int)
+    lumax_lib.Lumax_OpenDevice.restype = c_void_p
+    
+    lumax_lib.Lumax_SetTTL.argtypes = (c_void_p, c_int)
+    lumax_lib.Lumax_SetTTL.restype = c_int
+    
+    lumax_lib.Lumax_WaitForBuffer.argtypes = (c_void_p, c_int, c_int_p, c_int_p)
+    lumax_lib.Lumax_WaitForBuffer.restype = c_int
+    
+    lumax_lib.Lumax_SendFrame.argtypes = (c_void_p, c_point_p, c_int, c_int, c_int, c_int_p)
+    lumax_lib.Lumax_SendFrame.restype = c_int
+    
+    lumax_lib.Lumax_StopFrame.argtypes = (c_void_p,)
+    lumax_lib.Lumax_StopFrame.restype = c_int
+    
+    lumax_lib.Lumax_CloseDevice.argtypes = (c_void_p,)
+    lumax_lib.Lumax_CloseDevice.restype = c_int
+
+    
+
     def get_api_version():
         global lumax_lib
         return int(lumax_lib.Lumax_GetApiVersion())
