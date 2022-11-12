@@ -123,8 +123,21 @@ class lumax:
         global lumax_lib
         return int(lumax_lib.Lumax_CloseDevice(c_void_p(handle)))
 
-    def circle_point(x, y, r, i, ntotalpoints):
-        th = 2 * math.pi / ntotalpoints * i
+    @staticmethod
+    def circle_point(x, y, r, i, npoints):
+        th = 2 * math.pi / npoints * i
         xunit = int(r * math.cos(th) + x)
         yunit = int(r * math.sin(th) + y)
         return xunit, yunit
+
+    @staticmethod
+    def gen_circle(x, y, r, npoints, rd, gr, bl):
+        points = lpoints(npoints)
+        for i in range(0, npoints):
+            x, y = lumax.circle_point(128 * 255, 128 * 255, 5000, i, npoints)
+            points.struct_arr[i].x = x
+            points.struct_arr[i].y = y
+            points.struct_arr[i].r = rd
+            points.struct_arr[i].g = gr
+            points.struct_arr[i].b = bl
+        return points
