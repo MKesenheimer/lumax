@@ -9,7 +9,7 @@ import numpy
 def restrict(x, minx, maxx):
     return max(min(maxx, x), minx)
 
-class lpoint(Structure):
+class _lpoint(Structure):
     #_pack_=2
     _fields_ = [("x", c_uint16),
                 ("y", c_uint16),
@@ -20,16 +20,16 @@ class lpoint(Structure):
                 ("Ch7", c_uint16),
                 ("Ch8", c_uint16),
                 ("TTL", c_uint16)]
-c_point_p = POINTER(lpoint)
+c_point_p = POINTER(_lpoint)
 
-class lpoints(Structure):
+class _lpoints(Structure):
     #_pack_=2
     _fields_ = [('length', c_int),
                 # an array of structs
                 ('struct_arr', c_point_p)]
 
     def __init__(self, num_of_structs):
-        elems = (lpoint * num_of_structs)()
+        elems = (_lpoint * num_of_structs)()
         self.struct_arr = cast(elems, c_point_p)
         self.length = num_of_structs
 
@@ -76,12 +76,8 @@ class shape:
     def get_number_of_points(self):
         return self.npoints
 
-    def add_point(self, xypoint):
-        pass
-
-
 class geometry:
-    def circle_point(x, y, r, i, npoints):
+    def __circle_point(x, y, r, i, npoints):
         th = 2 * math.pi / npoints * i
         xunit = int(r * math.cos(th) + x)
         yunit = int(r * math.sin(th) + y)
@@ -91,12 +87,10 @@ class geometry:
         points = numpy.empty((npoints, 2), dtype='uint16')
         colors = numpy.array([[rd, gr, bl]])
         for i in range(0, npoints):
-            x, y = geometry.circle_point(x0, y0, r, i, npoints)
+            x, y = geometry.__circle_point(x0, y0, r, i, npoints)
             points[i, 0] = x
             points[i, 1] = y
         return shape(points, colors)
-
-
 
 class lumax:
     global lumax_lib
@@ -183,8 +177,6 @@ class lumax:
         global lumax_lib
         return int(lumax_lib.Lumax_CloseDevice(c_void_p(handle)))
 
-
-
 class lumax_renderer:
     def __init__(self):
         print("API version: {}".format(lumax.get_api_version()))
@@ -208,26 +200,65 @@ class lumax_renderer:
         self.shapes = numpy.append(self.shapes, shape)
         self.totnpoints += shape.get_number_of_points()
 
+    def add_point_to_frame(self, point):
+        if len(point) != 5:
+            raise Exception("Point must be of dimension 5 (x, y, r, g, b)")
+
+        xypoint = numpy.array([[point[0], point[1]]])
+        color = numpy.array([[point[2], point[3], point[4]]])
+        shp = shape(xypoint, color)
+        lumax_renderer.add_shape_to_frame(self, shp)
+
+    def __generate_buffer(self):
+        # two extra points for every shape + one extra point in the center of the frame
+        nextrapoints = 2 * len(self.shapes) + 1
+        buffer = _lpoints(self.totnpoints + nextrapoints)
+        # start in the center of the screen
+        index = 0
+        buffer.struct_arr[index].x = 128 * 255
+        buffer.struct_arr[index].y = 128 * 255
+        buffer.struct_arr[index].r = 0
+        buffer.struct_arr[index].g = 0
+        buffer.struct_arr[index].b = 0
+
+        for i in range(0, len(self.shapes)):
+            p = self.shapes[i].get_points()
+            # insert blank point at the beginning
+            index += 1
+            buffer.struct_arr[index].x = p[0, 0]
+            buffer.struct_arr[index].y = p[0, 1]
+            buffer.struct_arr[index].r = 0
+            buffer.struct_arr[index].g = 0
+            buffer.struct_arr[index].b = 0
+            
+            # copy the points
+            for j in range(0, len(p)):
+                index += 1
+                buffer.struct_arr[index].x = p[j, 0]
+                buffer.struct_arr[index].y = p[j, 1]
+                buffer.struct_arr[index].r = p[j, 2]
+                buffer.struct_arr[index].g = p[j, 3]
+                buffer.struct_arr[index].b = p[j, 4]
+
+            # insert blank point at the end
+            index += 1
+            buffer.struct_arr[index].x = p[len(p) - 1, 0]
+            buffer.struct_arr[index].y = p[len(p) - 1, 1]
+            buffer.struct_arr[index].r = 0
+            buffer.struct_arr[index].g = 0
+            buffer.struct_arr[index].b = 0
+
+        return buffer
+
     def send_frame(self, pointrate : int):
         if len(self.shapes) == 0:
             raise Exception("Frame is empty.")
 
-        buffer = lpoints(self.totnpoints)
-        lastlen = 0
-        for i in range(0, len(self.shapes)):
-            p = self.shapes[i].get_points()
-            for j in range(0, len(p)):
-                buffer.struct_arr[i * lastlen + j].x = p[j, 0]
-                buffer.struct_arr[i * lastlen + j].y = p[j, 1]
-                buffer.struct_arr[i * lastlen + j].r = p[j, 2]
-                buffer.struct_arr[i * lastlen + j].g = p[j, 3]
-                buffer.struct_arr[i * lastlen + j].b = p[j, 4]
-            lastlen = len(p)
+        buffer = lumax_renderer.__generate_buffer(self)
 
         # print the points
         #for i in range(0, buffer.length):
         #    print("p{} = {}, {}, {}, {}, {}".format(i, buffer.struct_arr[i].x, buffer.struct_arr[i].y, buffer.struct_arr[i].r, buffer.struct_arr[i].g, buffer.struct_arr[i].b))
-
 
         ret, timeToWait = lumax.send_frame(self.lhandle, buffer, pointrate, 0)
         print("SendFrame return: {}, {}".format(ret, timeToWait))
