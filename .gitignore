@@ -1,7 +1,7 @@
 .DS_Store
 *.o
 python/libs
-python/__pycache__/*
+**/__pycache__
 test/lumax.h
 test/libs
 test/*.exe
