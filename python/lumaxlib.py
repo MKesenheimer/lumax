@@ -46,12 +46,23 @@ class shape:
         self.points = numpy.empty((0, 5), dtype='uint16')
         self.npoints = 0
 
-    def __init__(self, points, color):
-        """ define a shape by numpy arrays for coordinates and color.
+    #def __init__(self, coloredpoints : numpy.array):
+    #    """ constructor with array of colored points. Dimension = (npoints, 5)"""
+    #    self.points = coloredpoints
+    #    self.npoints = len(coloredpoints)
+
+    def __init__(self, points, color = None):
+        """ constructor with array of colored points. Dimension = (npoints, 5) """
+        if type(color) == type(None):
+            self.points = points
+            self.npoints = len(points)
+            return
+
+        """ Alternative:
+            define a shape by numpy arrays for coordinates and color.
             points: for example: numpy.array([[0, 1], [2, 3], [4, 5]]) 
             color: for example: numpy.array([[128, 255, 128], [255, 255, 128], [128, 255, 255]]) 
             note: points and color must be equal in size, or color must be of size 1 (one color for all points) """
-
         plength = len(points)
         clength = len(color)
         if plength == 0 or clength == 0:
@@ -83,7 +94,7 @@ class geometry:
         yunit = int(r * math.sin(th) + y)
         return xunit, yunit
 
-    def new_circle(x0, y0, r, npoints, rd, gr, bl):
+    def circle(x0, y0, r, npoints, rd, gr, bl):
         points = numpy.empty((npoints, 2), dtype='uint16')
         colors = numpy.array([[rd, gr, bl]])
         for i in range(0, npoints):
@@ -91,6 +102,97 @@ class geometry:
             points[i, 0] = x
             points[i, 1] = y
         return shape(points, colors)
+
+    def line(x0, y0, x1, y1, npoints, rd, gr, bl):
+        if npoints < 2:
+            npoints = 2
+        lx = numpy.linspace(x0, x1, npoints)
+        ly = numpy.linspace(y0, y1, npoints)
+        points = numpy.empty((npoints, 5), dtype='uint16')
+        for i in range(0, npoints):
+            points[i, 0] = lx[i]
+            points[i, 1] = ly[i]
+            points[i, 2] = rd
+            points[i, 3] = gr
+            points[i, 4] = bl
+        return shape(points)
+
+    def triangle(x0, y0, x1, y1, x2, y2, npoints, rd, gr, bl):
+        if npoints < 2:
+            npoints = 2
+        lx1 = numpy.linspace(x0, x1, npoints)
+        ly1 = numpy.linspace(y0, y1, npoints)
+        lx2 = numpy.linspace(x1, x2, npoints)
+        ly2 = numpy.linspace(y1, y2, npoints)
+        lx3 = numpy.linspace(x2, x0, npoints)
+        ly3 = numpy.linspace(y2, y0, npoints)
+        points = numpy.empty((3 * npoints - 2, 5), dtype='uint16')
+        index = 0
+        for i in range(0, npoints - 1):
+            points[index, 0] = lx1[i]
+            points[index, 1] = ly1[i]
+            points[index, 2] = rd
+            points[index, 3] = gr
+            points[index, 4] = bl
+            index += 1
+        for i in range(0, npoints - 1):
+            points[index, 0] = lx2[i]
+            points[index, 1] = ly2[i]
+            points[index, 2] = rd
+            points[index, 3] = gr
+            points[index, 4] = bl
+            index += 1
+        for i in range(0, npoints):
+            points[index, 0] = lx3[i]
+            points[index, 1] = ly3[i]
+            points[index, 2] = rd
+            points[index, 3] = gr
+            points[index, 4] = bl
+            index += 1
+        return shape(points)
+
+    def tetragon(x0, y0, x1, y1, x2, y2, x3, y3, npoints, rd, gr, bl):
+        if npoints < 2:
+            npoints = 2
+        lx1 = numpy.linspace(x0, x1, npoints)
+        ly1 = numpy.linspace(y0, y1, npoints)
+        lx2 = numpy.linspace(x1, x2, npoints)
+        ly2 = numpy.linspace(y1, y2, npoints)
+        lx3 = numpy.linspace(x2, x3, npoints)
+        ly3 = numpy.linspace(y2, y3, npoints)
+        lx4 = numpy.linspace(x3, x0, npoints)
+        ly4 = numpy.linspace(y3, y0, npoints)
+        points = numpy.empty((4 * npoints - 3, 5), dtype='uint16')
+        index = 0
+        for i in range(0, npoints - 1):
+            points[index, 0] = lx1[i]
+            points[index, 1] = ly1[i]
+            points[index, 2] = rd
+            points[index, 3] = gr
+            points[index, 4] = bl
+            index += 1
+        for i in range(0, npoints - 1):
+            points[index, 0] = lx2[i]
+            points[index, 1] = ly2[i]
+            points[index, 2] = rd
+            points[index, 3] = gr
+            points[index, 4] = bl
+            index += 1
+        for i in range(0, npoints - 1):
+            points[index, 0] = lx3[i]
+            points[index, 1] = ly3[i]
+            points[index, 2] = rd
+            points[index, 3] = gr
+            points[index, 4] = bl
+            index += 1
+        for i in range(0, npoints):
+            points[index, 0] = lx4[i]
+            points[index, 1] = ly4[i]
+            points[index, 2] = rd
+            points[index, 3] = gr
+            points[index, 4] = bl
+            index += 1
+        return shape(points)
 
 class lumax:
     global lumax_lib
@@ -183,12 +285,9 @@ class lumax_renderer:
         print("Number of physical devices: {}".format(lumax.get_physical_devices()))
         self.lhandle = lumax.open_device(1, 0)
         print("Lumax handle: {}".format(self.lhandle))
-
         print("SetTTL return: {}".format(lumax.setTTL(self.lhandle, 0)))
-
         ret, timeToWait, bufferChanged = lumax.wait_for_buffer(self.lhandle, 17)
         print("WaitForBuffer return: {}, {}, {}".format(ret, timeToWait, bufferChanged))
-
         self.shapes = numpy.array([])
         self.totnpoints = 0
 
@@ -203,11 +302,17 @@ class lumax_renderer:
     def add_point_to_frame(self, point):
         if len(point) != 5:
             raise Exception("Point must be of dimension 5 (x, y, r, g, b)")
-
         xypoint = numpy.array([[point[0], point[1]]])
         color = numpy.array([[point[2], point[3], point[4]]])
         shp = shape(xypoint, color)
         lumax_renderer.add_shape_to_frame(self, shp)
+
+    def add_points_to_frame(self, points):
+        if len(points) == 0:
+            raise Exception("Points must not be empty.")
+        shp = shape(points)
+        lumax_renderer.add_shape_to_frame(self, shp)
+
 
     def __generate_buffer(self):
         # two extra points for every shape + one extra point in the center of the frame
