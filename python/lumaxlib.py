@@ -46,11 +46,6 @@ class shape:
         self.points = numpy.empty((0, 5), dtype='uint16')
         self.npoints = 0
 
-    #def __init__(self, coloredpoints : numpy.array):
-    #    """ constructor with array of colored points. Dimension = (npoints, 5)"""
-    #    self.points = coloredpoints
-    #    self.npoints = len(coloredpoints)
-
     def __init__(self, points, color = None):
         """ constructor with array of colored points. Dimension = (npoints, 5) """
         if type(color) == type(None):
