@@ -26,7 +26,7 @@ b = restrict(b, 0, 255 * 255)
 npoints = 100
 points = lpoints(npoints)
 for i in range(0, npoints):
-    x, y = lumax.circle_point(128 * 255, 128 * 255, 5000, i, npoints)
+    x, y = geometry.circle_point(128 * 255, 128 * 255, 5000, i, npoints)
     points.struct_arr[i].x = x
     points.struct_arr[i].y = y
     points.struct_arr[i].r = r
