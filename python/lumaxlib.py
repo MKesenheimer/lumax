@@ -205,7 +205,7 @@ class lumax:
                 try:
                     lumax_lib = CDLL('./libs/lumax.dll')
                 except:
-                    print('OS %s not recognized or library not found.' % (sys.platform))
+                    print('[ERROR] OS %s not recognized or library not found.' % (sys.platform))
 
     c_int_p = POINTER(c_int)
     
@@ -276,13 +276,13 @@ class lumax:
 
 class lumax_renderer:
     def __init__(self):
-        print("API version: {}".format(lumax.get_api_version()))
-        print("Number of physical devices: {}".format(lumax.get_physical_devices()))
+        print("[INFO] API version: {}".format(lumax.get_api_version()))
+        print("[INFO] Number of physical devices: {}".format(lumax.get_physical_devices()))
         self.lhandle = lumax.open_device(1, 0)
-        print("Lumax handle: {}".format(self.lhandle))
-        print("SetTTL return: {}".format(lumax.setTTL(self.lhandle, 0)))
+        print("[INFO] Lumax handle: {}".format(self.lhandle))
+        print("[INFO] SetTTL return: {}".format(lumax.setTTL(self.lhandle, 0)))
         ret, timeToWait, bufferChanged = lumax.wait_for_buffer(self.lhandle, 17)
-        print("WaitForBuffer return: {}, {}, {}".format(ret, timeToWait, bufferChanged))
+        print("[INFO] WaitForBuffer return: {}, {}, {}".format(ret, timeToWait, bufferChanged))
         self.shapes = numpy.array([])
         self.totnpoints = 0
 
@@ -361,15 +361,15 @@ class lumax_renderer:
         #    print("p{} = {}, {}, {}, {}, {}".format(i, buffer.struct_arr[i].x, buffer.struct_arr[i].y, buffer.struct_arr[i].r, buffer.struct_arr[i].g, buffer.struct_arr[i].b))
 
         ret, timeToWait = lumax.send_frame(self.lhandle, buffer, pointrate, 0)
-        print("SendFrame return: {}, {}".format(ret, timeToWait))
+        print("[INFO] SendFrame return: {}, {}".format(ret, timeToWait))
         ret, timeToWait, bufferChanged = lumax.wait_for_buffer(self.lhandle, 17)
         return
 
     def stop_frame(self):
-        print("StopFrame return: {}".format(lumax.stop_frame(self.lhandle)))
+        print("[INFO] StopFrame return: {}".format(lumax.stop_frame(self.lhandle)))
         return
 
     def close_device(self):
-        print("StopFrame return: {}".format(lumax.stop_frame(self.lhandle)))
-        print("CloseDevice return: {}".format(lumax.close_device(self.lhandle)))
+        print("[INFO] StopFrame return: {}".format(lumax.stop_frame(self.lhandle)))
+        print("[INFO] CloseDevice return: {}".format(lumax.close_device(self.lhandle)))
         return
