@@ -61,10 +61,10 @@ class shape:
         plength = len(points)
         clength = len(color)
         if plength == 0 or clength == 0:
-            raise Exception("Arrays must not be empty.")
+            raise Exception("[ERROR] Arrays must not be empty.")
 
         if plength != clength and clength != 1:
-            raise Exception("Points and color array must be equal in size, or color array must be of size 1.") 
+            raise Exception("[ERROR] Points and color array must be equal in size, or color array must be of size 1.") 
 
         self.points = numpy.empty((plength, 5), dtype='uint16')
         for i in range(0, plength):
@@ -276,13 +276,13 @@ class lumax:
 
 class lumax_renderer:
     def __init__(self):
-        print("[INFO] API version: {}".format(lumax.get_api_version()))
-        print("[INFO] Number of physical devices: {}".format(lumax.get_physical_devices()))
+        print("[DEBUG] API version: {}".format(lumax.get_api_version()))
+        print("[DEBUG] Number of physical devices: {}".format(lumax.get_physical_devices()))
         self.lhandle = lumax.open_device(1, 0)
-        print("[INFO] Lumax handle: {}".format(self.lhandle))
-        print("[INFO] SetTTL return: {}".format(lumax.setTTL(self.lhandle, 0)))
+        print("[DEBUG] Lumax handle: {}".format(self.lhandle))
+        print("[DEBUG] SetTTL return: {}".format(lumax.setTTL(self.lhandle, 0)))
         ret, timeToWait, bufferChanged = lumax.wait_for_buffer(self.lhandle, 17)
-        print("[INFO] WaitForBuffer return: {}, {}, {}".format(ret, timeToWait, bufferChanged))
+        print("[DEBUG] WaitForBuffer return: {}, {}, {}".format(ret, timeToWait, bufferChanged))
         self.shapes = numpy.array([])
         self.totnpoints = 0
 
@@ -296,7 +296,7 @@ class lumax_renderer:
 
     def add_point_to_frame(self, point):
         if len(point) != 5:
-            raise Exception("Point must be of dimension 5 (x, y, r, g, b)")
+            raise Exception("[ERROR] Point must be of dimension 5 (x, y, r, g, b)")
         xypoint = numpy.array([[point[0], point[1]]])
         color = numpy.array([[point[2], point[3], point[4]]])
         shp = shape(xypoint, color)
@@ -304,12 +304,16 @@ class lumax_renderer:
 
     def add_points_to_frame(self, points):
         if len(points) == 0:
-            raise Exception("Points must not be empty.")
+            raise Exception("[ERROR] Points must not be empty.")
         shp = shape(points)
         lumax_renderer.add_shape_to_frame(self, shp)
 
 
     def __generate_buffer(self):
+        # TODO: von außerhalb setzen!
+        mirrorx = 1
+        mirrory = 1
+
         # two extra points for every shape + one extra point in the center of the frame
         nextrapoints = 2 * len(self.shapes) + 1
         buffer = _lpoints(self.totnpoints + nextrapoints)
@@ -325,8 +329,8 @@ class lumax_renderer:
             p = self.shapes[i].get_points()
             # insert blank point at the beginning
             index += 1
-            buffer.struct_arr[index].x = p[0, 0]
-            buffer.struct_arr[index].y = p[0, 1]
+            buffer.struct_arr[index].x = (255 * 255 * mirrorx) + (-1)**(mirrorx) * p[0, 0]
+            buffer.struct_arr[index].y = (255 * 255 * mirrory) + (-1)**(mirrory) * p[0, 1]
             buffer.struct_arr[index].r = 0
             buffer.struct_arr[index].g = 0
             buffer.struct_arr[index].b = 0
@@ -334,16 +338,16 @@ class lumax_renderer:
             # copy the points
             for j in range(0, len(p)):
                 index += 1
-                buffer.struct_arr[index].x = p[j, 0]
-                buffer.struct_arr[index].y = p[j, 1]
+                buffer.struct_arr[index].x = (255 * 255 * mirrorx) + (-1)**(mirrorx) * p[j, 0]
+                buffer.struct_arr[index].y = (255 * 255 * mirrory) + (-1)**(mirrory) * p[j, 1]
                 buffer.struct_arr[index].r = p[j, 2]
                 buffer.struct_arr[index].g = p[j, 3]
                 buffer.struct_arr[index].b = p[j, 4]
 
             # insert blank point at the end
             index += 1
-            buffer.struct_arr[index].x = p[len(p) - 1, 0]
-            buffer.struct_arr[index].y = p[len(p) - 1, 1]
+            buffer.struct_arr[index].x = (255 * 255 * mirrorx) + (-1)**(mirrorx) * p[len(p) - 1, 0]
+            buffer.struct_arr[index].y = (255 * 255 * mirrory) + (-1)**(mirrory) * p[len(p) - 1, 1]
             buffer.struct_arr[index].r = 0
             buffer.struct_arr[index].g = 0
             buffer.struct_arr[index].b = 0
@@ -361,15 +365,15 @@ class lumax_renderer:
         #    print("p{} = {}, {}, {}, {}, {}".format(i, buffer.struct_arr[i].x, buffer.struct_arr[i].y, buffer.struct_arr[i].r, buffer.struct_arr[i].g, buffer.struct_arr[i].b))
 
         ret, timeToWait = lumax.send_frame(self.lhandle, buffer, pointrate, 0)
-        print("[INFO] SendFrame return: {}, {}".format(ret, timeToWait))
+        print("[DEBUG] SendFrame return: {}, {}".format(ret, timeToWait))
         ret, timeToWait, bufferChanged = lumax.wait_for_buffer(self.lhandle, 17)
         return
 
     def stop_frame(self):
-        print("[INFO] StopFrame return: {}".format(lumax.stop_frame(self.lhandle)))
+        print("[DEBUG] StopFrame return: {}".format(lumax.stop_frame(self.lhandle)))
         return
 
     def close_device(self):
-        print("[INFO] StopFrame return: {}".format(lumax.stop_frame(self.lhandle)))
-        print("[INFO] CloseDevice return: {}".format(lumax.close_device(self.lhandle)))
+        print("[DEBUG] StopFrame return: {}".format(lumax.stop_frame(self.lhandle)))
+        print("[DEBUG] CloseDevice return: {}".format(lumax.close_device(self.lhandle)))
         return
