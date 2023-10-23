@@ -14,9 +14,9 @@ platform=$1
 
 # macOS
 if [ "$platform" == "macOS" ]; then
-  gcc -c -fPIC -I/opt/local/include liblumax.c
-  gcc -shared     -fPIC -o liblumax_darwin.so    liblumax.o -L/opt/local/lib/ -lftd2xx
-  gcc -dynamiclib -fPIC -o liblumax_darwin.dylib liblumax.o -L/opt/local/lib/ -lftd2xx
+  gcc -c -fPIC -I/opt/local/include -I/opt/local/include/libftdi1 liblumax.c
+  gcc -shared     -fPIC -o liblumax_darwin.so    liblumax.o -L/opt/local/lib -lftdi1
+  gcc -dynamiclib -fPIC -o liblumax_darwin.dylib liblumax.o -L/opt/local/lib -lftdi1
 
   # set the install names in the shared libraries (in order to find with rpath)
   install_name_tool -id @rpath/liblumax_darwin.so liblumax_darwin.so
@@ -27,16 +27,10 @@ if [ "$platform" == "macOS" ]; then
   #otool -D liblumax.so
 fi
 
-# Windows
-if [ "$platform" == "windows" ]; then
-  i686-w64-mingw32-gcc -DWINDOWS -c -I./FTD2XX/extracted liblumax.c
-  i686-w64-mingw32-gcc -shared -fPIC -o liblumax_win32.so liblumax.o -L./FTD2XX/extracted/i386 -lwinmm -lftd2xx
-fi
-
 # Linux
 if [ "$platform" == "linux" ]; then
-  gcc -c -fPIC -I/usr/include liblumax.c
-  gcc -shared -fPIC -o liblumax_linux.so liblumax.o -L/usr/include -lftd2xx
+  gcc -c -fPIC -I/usr/include -I/usr/include/libftdi1 liblumax.c
+  gcc -shared -fPIC -o liblumax_linux.so liblumax.o -L/usr/include -lftdi1
 
   # create rules for this usb device
   # /etc/udev/rules.d/87-lumax.rules
