@@ -73,11 +73,11 @@ int openDev(int numDev, void **handle) {
     uint32_t ret;
     struct ftdi_context *ftHandle;
     int result = 1;
-    
-    if ((ret = ftdi_init(ftHandle)) < 0) {
+
+    if ((ftHandle = ftdi_new()) == 0) {
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_ERROR)
-            fprintf(stderr, "[ERROR] openDev: ftdi_init failed: %d\n", ret);
+            fprintf(stderr, "[ERROR] Lumax_GetPhysicalDevices: ftdi_new failed.\n");
 #endif
         return EXIT_FAILURE;
     }
@@ -157,7 +157,7 @@ int isOpen(void *handle) {
                         printf("[DEBUG] isOpen: Closing device with handle 0x%x.\n", (unsigned int)(uintptr_t)handle);
 #endif
                     ftdi_usb_close(handle);
-                    ftdi_free(handle);
+                    if (handle) ftdi_free(handle);
                 }
                 if (openDev(0, handle)) { // TODO, multiple devices
 #ifdef DEBUG_POSSIBLE
@@ -479,10 +479,10 @@ int Lumax_GetPhysicalDevices() {
     struct ftdi_device_list *devlist, *curdev;
     char manufacturer[128], description[128], serialnumber[16];
 
-    if ((ret = ftdi_init(ftdi)) < 0) {
+    if ((ftdi = ftdi_new()) == 0) {
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_ERROR)
-            fprintf(stderr, "[ERROR] Lumax_GetPhysicalDevices: ftdi_init failed: %d\n", ret);
+            fprintf(stderr, "[ERROR] Lumax_GetPhysicalDevices: ftdi_new failed.\n");
 #endif
         return EXIT_FAILURE;
     }
@@ -525,7 +525,7 @@ int Lumax_GetPhysicalDevices() {
         memcpy(SerialNumber, serialnumber, 16);
 
     ftdi_list_free(&devlist);
-    ftdi_free(ftdi);
+    if (ftdi) ftdi_free(ftdi);
     return ret;
 }
 
@@ -667,7 +667,7 @@ int Lumax_CloseDevice(void* handle) {
         printf("[DEBUG] Lumax_CloseDevice: Closing device handle 0x%x.\n", (unsigned int)(uintptr_t)ftHandle);
 #endif
     int ret = ftdi_usb_close(ftHandle);
-    ftdi_free(ftHandle);
+    if (ftHandle) ftdi_free(ftHandle);
     return ret;
 }
 
