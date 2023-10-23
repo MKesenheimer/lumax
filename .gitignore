@@ -8,3 +8,5 @@ test/*.exe
 test/main_linux
 test/main_darwin
 .vscode
+a.out
+test/libftdi/
