@@ -30,7 +30,7 @@ int main(int argc, char *argv[]) {
     if (NumOfCards > 0)
     {
         void* Handle = Lumax_OpenDevice(1, 0);
-        printf("Lumax_OpenDevice returned handle: 0x%x\n", (unsigned int)Handle);
+        printf("Lumax_OpenDevice returned handle: 0x%x\n", (unsigned int)(uintptr_t)Handle);
 
         if (Handle > 0) {
             result = Lumax_SetTTL(Handle, 0xff);
