@@ -27,8 +27,7 @@ int main(int argc, char *argv[]) {
     int result;
     int NumOfCards = Lumax_GetPhysicalDevices();
     printf("Number of MiniLumax devices: %i\n", NumOfCards);
-    if (NumOfCards > 0)
-    {
+    if (NumOfCards > 0) {
         void* Handle = Lumax_OpenDevice(1, 0);
         printf("Lumax_OpenDevice returned handle: 0x%x\n", (unsigned int)(uintptr_t)Handle);
 

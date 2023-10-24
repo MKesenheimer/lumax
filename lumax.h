@@ -132,4 +132,5 @@ const uint32_t DBG_SETDMXMODE = 4096;
 const uint32_t DBG_OPENDEVICE = 8192;
 const uint32_t DBG_CHECKIFBUSY = 16384;
 const uint32_t DBG_ISOPEN = 32768;
+const uint32_t DBG_ALL = 65536;
 extern uint32_t lumax_verbosity;

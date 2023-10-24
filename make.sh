@@ -11,6 +11,7 @@ fi
 
 # macOS, linux, windows
 platform=$1
+dotest=$2
 
 # macOS
 if [ "$platform" == "macOS" ]; then
@@ -53,3 +54,11 @@ cp -r libs lumax.h test
 
 # copy files for the python interface
 cp -r libs python
+
+if [ "$dotest" != "" ]; then
+  cd test
+  ./make.sh $platform
+  # todo: other platforms
+  ./main_darwin
+  cd ..
+fi

@@ -57,7 +57,7 @@ uint32_t IsBusy = 0; // flags[30], pos = 1432
 uint32_t BusyTime; // flags[37], pos = 1460
 
 // DEBUG Flags
-uint32_t lumax_verbosity = DBG_INFO | DBG_GENERAL; //DBG_INFO | DBG_SENDFRAME;
+uint32_t lumax_verbosity = DBG_ALL; 
 
 // Done
 #ifndef WINDOWS
@@ -76,16 +76,16 @@ int openDev(int numDev, void **handle) {
 
     if ((ftHandle = ftdi_new()) == 0) {
 #ifdef DEBUG_POSSIBLE
-        if (lumax_verbosity & DBG_ERROR)
-            fprintf(stderr, "[ERROR] Lumax_GetPhysicalDevices: ftdi_new failed.\n");
+        if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
+            fprintf(stderr, "[ERROR] openDev: ftdi_new failed.\n");
 #endif
-        return EXIT_FAILURE;
+        return -1;
     }
 
     // TODO: check if device is already open
     if (unknown52) {
 #ifdef DEBUG_POSSIBLE
-        if (lumax_verbosity & DBG_INFO)
+        if (lumax_verbosity & DBG_INFO || lumax_verbosity & DBG_ALL)
             printf("[INFO] openDev: Device with SerialNumber %s and handle 0x%x already open\n", SerialNumber, (unsigned int)(uintptr_t)ftHandle);
 #endif
         return 0;
@@ -93,20 +93,27 @@ int openDev(int numDev, void **handle) {
 
     if ((ret = ftdi_usb_open_desc(ftHandle, vid, pid, NULL, SerialNumber)) < 0) {
 #ifdef DEBUG_POSSIBLE
-        if (lumax_verbosity & DBG_ERROR)
+        if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
             fprintf(stderr, "[ERROR] openDev: ftdi_usb_open_desc failed: %d\n", ret);
 #endif
-        return EXIT_FAILURE;
+        return -1;
     }
 
 #ifdef DEBUG_POSSIBLE
-    if (lumax_verbosity & DBG_INFO)
+    if (lumax_verbosity & DBG_INFO || lumax_verbosity & DBG_ALL)
         printf("[INFO] openDev: Device with SerialNumber %s and handle 0x%x opened.\n", SerialNumber, (unsigned int)(uintptr_t)ftHandle);
 #endif
 
+    // TODO
+    /*int chunksize = 256;
+    if (ftdi_write_data_set_chunksize(ftHandle, chunksize) < 0 || ftdi_read_data_set_chunksize(ftHandle, chunksize) < 0) {
+        fprintf(stderr, "[ERROR] openDev: can not set chunksize: %s\n", ftdi_get_error_string(ftHandle));
+        return -1;
+    }*/
+
     ftdi_set_latency_timer(ftHandle, 2);
-    ftHandle->usb_read_timeout = 1;
-    ftHandle->usb_write_timeout = 1;
+    ftHandle->usb_read_timeout = 1000;
+    ftHandle->usb_write_timeout = 1000;
     *handle = ftHandle;
     return 0;
 }
@@ -131,7 +138,7 @@ int clearBuffer(void *handle) {
 void checkIfBusy(void *handle, uint32_t ftStatus) {
     if (ftStatus == -1 && IsBusy != 1) {
 #ifdef DEBUG_POSSIBLE
-        if (lumax_verbosity & DBG_CHECKIFBUSY)
+        if (lumax_verbosity & DBG_CHECKIFBUSY || lumax_verbosity & DBG_ALL)
             printf("[DEBUG] checkIfBusy: Device with handle 0x%x is busy.\n", (unsigned int)(uintptr_t)handle);
 #endif
         IsBusy = 1;
@@ -141,7 +148,7 @@ void checkIfBusy(void *handle, uint32_t ftStatus) {
 
 // Done
 int isOpen(void *handle) {
-    int result = 1; // 1 means error, device is closed!
+    int result = -1; // -1 means error, device is closed!
     if (handle > 0) {
         if (unknown52)
             return 0;
@@ -153,21 +160,20 @@ int isOpen(void *handle) {
             if (diff > 2000 && IsBusy == 1) {
                 if (handle) {
 #ifdef DEBUG_POSSIBLE
-                    if (lumax_verbosity & DBG_ISOPEN)
+                    if (lumax_verbosity & DBG_ISOPEN | lumax_verbosity & DBG_ALL)
                         printf("[DEBUG] isOpen: Closing device with handle 0x%x.\n", (unsigned int)(uintptr_t)handle);
 #endif
-                    ftdi_usb_close(handle);
-                    if (handle) ftdi_free(handle);
+                    Lumax_CloseDevice(handle);
                 }
                 if (openDev(0, handle)) { // TODO, multiple devices
 #ifdef DEBUG_POSSIBLE
-                    if (lumax_verbosity & DBG_ISOPEN)
+                    if (lumax_verbosity & DBG_ISOPEN || lumax_verbosity & DBG_ALL)
                         printf("[DEBUG] isOpen: Opening device with handle 0x%x failed.\n", (unsigned int)(uintptr_t)handle);
 #endif
                     BusyTime = time;
                 } else {
 #ifdef DEBUG_POSSIBLE
-                    if (lumax_verbosity & DBG_ISOPEN)
+                    if (lumax_verbosity & DBG_ISOPEN || lumax_verbosity & DBG_ALL)
                         printf("[DEBUG] isOpen: Opened device with handle 0x%x successfully.\n", (unsigned int)(uintptr_t)handle);
 #endif
                     IsBusy = 0;
@@ -177,7 +183,7 @@ int isOpen(void *handle) {
         } else if (handle) {
             if (QueueClearBuffer == 1) {
 #ifdef DEBUG_POSSIBLE
-                if (lumax_verbosity & DBG_ISOPEN)
+                if (lumax_verbosity & DBG_ISOPEN || lumax_verbosity & DBG_ALL)
                    printf("[DEBUG] isOpen: Clearing buffer.\n");
 #endif
                 clearBuffer(handle);
@@ -194,70 +200,61 @@ int writeToDev(void *handle, uint8_t *buffer, uint32_t bytesToWrite) {
     struct ftdi_context *ftHandle = (struct ftdi_context*)handle;
     uint32_t bytesWritten;
     uint32_t ftStatus = ftdi_write_data(ftHandle, buffer, bytesToWrite);
-
-    if (ftStatus < 0) {
-#ifdef DEBUG_POSSIBLE
-        if (lumax_verbosity & DBG_ERROR) {
-            fprintf(stderr, "[ERROR] writeToDev: ftdi_write_data failed with error code %d.\n", ftStatus);
-        }
-    }
-#endif
-
     bytesWritten = ftStatus;
 
 #ifdef DEBUG_POSSIBLE
-    if (lumax_verbosity & DBG_WRITETODEV) {
+    if (lumax_verbosity & DBG_WRITETODEV || lumax_verbosity & DBG_ALL) {
         for (uint32_t i = 0; i < bytesToWrite; ++i)
             printf("[DEBUG] writeToDev: buffer[%d] = 0x%x\n", i, buffer[i]);
         printf("[DEBUG] writeToDev: ftStatus = %d, bytesToWrite = %d, bytesWritten = %d\n", ftStatus, bytesToWrite, bytesWritten);
     }
 #endif
 
-    if (bytesToWrite == bytesWritten) {
+    if (bytesToWrite != bytesWritten) {
 #ifdef DEBUG_POSSIBLE
-        if (lumax_verbosity & DBG_WRITETODEV) {
-            printf("[DEBUG] writeToDev: return 0.\n\n");
+        if (lumax_verbosity & DBG_WRITETODEV || lumax_verbosity & DBG_ALL) {
+            printf("[DEBUG] writeToDev: bytesToWrite != bytesWritten.\n");
         }
 #endif
-        return 0;
+        checkIfBusy(handle, ftStatus);
+        return -1;
     }
-
-#ifdef DEBUG_POSSIBLE
-    if (lumax_verbosity & DBG_WRITETODEV) {
-        printf("[DEBUG] writeToDev: return 1.\n\n");
-    }
-#endif
     
-    checkIfBusy(handle, ftStatus);
-    return 1;
+    return 0;
 }
 
 // Done
 int readFromDev(void *handle, uint8_t *buffer, uint32_t bytesToRead) {
+    /*uint32_t totalBytesReceived = 0;
+    int result = 0;
+    while (totalBytesReceived < bytesToRead && result != -1) {
+        uint32_t bytesReceived;
+        result = readFromDev2(handle, buffer, bytesToRead, &bytesReceived);
+        totalBytesReceived += bytesReceived;
+    }
+    return result;*/
     return readFromDev2(handle, buffer, bytesToRead, NULL);
 }
+
 int readFromDev2(void *handle, uint8_t *buffer, uint32_t bytesToRead, uint32_t* bytesReceived) {
     struct ftdi_context *ftHandle = (struct ftdi_context*)handle;
     int result = 0;
     uint32_t received;
-    uint32_t ftStatus;
-    
-    ftStatus = ftdi_read_data(ftHandle, buffer, bytesToRead);
 
-    if (ftStatus < 0) {
+    if ((result = ftdi_read_data(ftHandle, buffer, bytesToRead)) < 0) {
 #ifdef DEBUG_POSSIBLE
-        if (lumax_verbosity & DBG_ERROR) {
-            fprintf(stderr, "[ERROR] readFromDev: ftdi_read_data failed with error code %d.\n", ftStatus);
+        if (lumax_verbosity & DBG_WARN || lumax_verbosity & DBG_ALL) {
+            printf("[WARN] readFromDev: ftdi_read_data failed with error code %d (%s).\n", result, ftdi_get_error_string(ftHandle));
         }
-        return 1;
+        return -1;
     }
 #endif
 
-    received = ftStatus;
+    received = result;
 
 #ifdef DEBUG_POSSIBLE
-    if (lumax_verbosity & DBG_READFROMDEV)
-        printf("[DEBUG] readFromDev: ftStatus = %d, bytesToRead = %d, bytesReceived = %d.\n", ftStatus, bytesToRead, received);
+    if (lumax_verbosity & DBG_READFROMDEV || lumax_verbosity & DBG_ALL)
+        printf("[DEBUG] readFromDev: ftStatus = %d, bytesToRead = %d, bytesReceived = %d.\n", result, bytesToRead, received);
 #endif
 
     if (bytesReceived != NULL)
@@ -272,7 +269,7 @@ int readFromDev2(void *handle, uint8_t *buffer, uint32_t bytesToRead, uint32_t* 
 // Done
 int writeFrameBuffer(void *handle, uint8_t *frameBuffer, uint16_t frameBufferSize, uint16_t numberOfBytes, uint8_t counter, int check, int flag) {
 #ifdef DEBUG_POSSIBLE
-    if (lumax_verbosity & DBG_WRITEFRAMEBUFFER)
+    if (lumax_verbosity & DBG_WRITEFRAMEBUFFER || lumax_verbosity & DBG_ALL)
         printf("[DEBUG] writeFrameBuffer: frameBufferSize = %d, numberOfBytes = %d, counter = %d, check = %d, flag = %d.\n", frameBufferSize, numberOfBytes, counter, check, flag);
 #endif
     int result = 1;
@@ -287,7 +284,7 @@ int writeFrameBuffer(void *handle, uint8_t *frameBuffer, uint16_t frameBufferSiz
         writeb[6] = writeb[5] ^ writeb[4] ^ writeb[3] ^ writeb[2] ^ writeb[1] ^ writeb[0];
         if (!writeToDev(handle, writeb, 7) && !writeToDev(handle, frameBuffer, numberOfBytes)) {
 #ifdef DEBUG_POSSIBLE
-            if (lumax_verbosity & DBG_WRITEFRAMEBUFFER)
+            if (lumax_verbosity & DBG_WRITEFRAMEBUFFER || lumax_verbosity & DBG_ALL)
                 printf("[DEBUG] writeFrameBuffer: wrote successfully.\n");
 #endif
             uint8_t readb[2];
@@ -301,7 +298,7 @@ int writeFrameBuffer(void *handle, uint8_t *frameBuffer, uint16_t frameBufferSiz
         }
     }
 #ifdef DEBUG_POSSIBLE
-    if (lumax_verbosity & DBG_WRITEFRAMEBUFFER)
+    if (lumax_verbosity & DBG_WRITEFRAMEBUFFER || lumax_verbosity & DBG_ALL)
         printf("[DEBUG] writeFrameBuffer: result = %d\n", result);
 #endif
     return result;
@@ -311,19 +308,19 @@ int writeFrameBuffer(void *handle, uint8_t *frameBuffer, uint16_t frameBufferSiz
 int readID(void *handle, uint8_t *arr, uint16_t size) {
     if (!arr) {
 #ifdef DEBUG_POSSIBLE
-        if (lumax_verbosity & DBG_ERROR)
+        if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
             fprintf(stderr, "[ERROR] readID: array not initialized.\n");
 #endif
-        return 1;
+        return -1;
     }
 
     uint8_t buffer[7] = {0xc9, 0, 0, 0, 0, 0, 0xc9};
     if (writeToDev(handle, buffer, 7)) {
 #ifdef DEBUG_POSSIBLE
-        if (lumax_verbosity & DBG_ERROR)
-            fprintf(stderr, "[ERROR] readID: wrote to device failed.\n");
+        if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
+            fprintf(stderr, "[ERROR] readID: write to device failed.\n");
 #endif
-        return 1;
+        return -1;
     }
 
     usleep(50000u);
@@ -331,38 +328,31 @@ int readID(void *handle, uint8_t *arr, uint16_t size) {
     // read back one byte and check start of frame
     if (readFromDev(handle, &lastByte, 1u) || lastByte != buffer[6]) {
 #ifdef DEBUG_POSSIBLE
-        if (lumax_verbosity & DBG_ERROR)
-            fprintf(stderr, "[ERROR] readID: read from device failed.\n");
+        if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
+            fprintf(stderr, "[ERROR] readID: check failed.\n");
 #endif
-        return 1;
+        return -1;
     }
-
-    // all good, initialize array
-    for (int i = 0; i < size; ++i) 
-        arr[i] = 0;
             
-    // read back array
+    // read id
     if (readFromDev(handle, arr, size)) {
 #ifdef DEBUG_POSSIBLE
-        if (lumax_verbosity & DBG_ERROR)
-            fprintf(stderr, "[ERROR] readID: read from device failed.\n");
+        if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
+            fprintf(stderr, "[INFO] readID: no ID available.\n");
 #endif
+        for (int i = 0; i < size; ++i) 
+            arr[i] = 0;
         return 1;
     }
 
     // read checksum
     if (readFromDev(handle, &lastByte, 1u)) {
 #ifdef DEBUG_POSSIBLE
-        if (lumax_verbosity & DBG_ERROR)
-            fprintf(stderr, "[ERROR] readID: read from device failed.\n");
+        if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
+            fprintf(stderr, "[ERROR] readID: read checksum failed.\n");
 #endif
-        return 1;
+        return -1;
     }
-
-#ifdef DEBUG_POSSIBLE
-    if (lumax_verbosity & DBG_READID)
-        printf("[DEBUG] readID: calculating checksum.\n");
-#endif
 
     // calculate checksum
     uint8_t check = 0;
@@ -371,10 +361,10 @@ int readID(void *handle, uint8_t *arr, uint16_t size) {
     }
     if (lastByte != check) {
 #ifdef DEBUG_POSSIBLE
-        if (lumax_verbosity & DBG_ERROR)
+        if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
             fprintf(stderr, "[ERROR] readID: checksum invalid.\n");
 #endif
-        return 1;
+        return -1;
     }
 
     return 0;
@@ -385,12 +375,12 @@ int readMemory(void *handle, uint8_t *arr, uint16_t start, uint16_t end) {
     int result = 1;
     if (arr) {
 #ifdef DEBUG_POSSIBLE
-        if (lumax_verbosity & DBG_READMEMORY)
+        if (lumax_verbosity & DBG_READMEMORY || lumax_verbosity & DBG_ALL)
             printf("[DEBUG] readMemory: array initialized.\n");
 #endif
         if (start >= 0 && end > 0 && start + end <= 463) {
 #ifdef DEBUG_POSSIBLE
-        if (lumax_verbosity & DBG_READMEMORY)
+        if (lumax_verbosity & DBG_READMEMORY || lumax_verbosity & DBG_ALL)
             printf("[DEBUG] readMemory: boundaries ok.\n");
 #endif
             uint8_t writeb[7];
@@ -404,7 +394,7 @@ int readMemory(void *handle, uint8_t *arr, uint16_t start, uint16_t end) {
             uint8_t readb[522];
             if (!writeToDev(handle, writeb, 7) && !readFromDev(handle, readb, end + 2)) {
 #ifdef DEBUG_POSSIBLE
-                if (lumax_verbosity & DBG_READMEMORY)
+                if (lumax_verbosity & DBG_READMEMORY || lumax_verbosity & DBG_ALL)
                     printf("[DEBUG] readMemory: wrote and read to device successfully.\n");
 #endif
                 uint8_t check = 0;
@@ -416,14 +406,14 @@ int readMemory(void *handle, uint8_t *arr, uint16_t start, uint16_t end) {
                 if (readb[0] == writeb[6] && readb[end + 1] == check) result = 0;
             } else {
 #ifdef DEBUG_POSSIBLE
-                if (lumax_verbosity & DBG_READMEMORY)
+                if (lumax_verbosity & DBG_READMEMORY || lumax_verbosity & DBG_ALL)
                     printf("[DEBUG] readMemory: read or write error.\n");
 #endif
             }
         }
     }
 #ifdef DEBUG_POSSIBLE
-    if (lumax_verbosity & DBG_READMEMORY)
+    if (lumax_verbosity & DBG_READMEMORY || lumax_verbosity & DBG_ALL)
         printf("[DEBUG] readMemory: result = %d\n", result);
 #endif
     return result;
@@ -474,59 +464,85 @@ int Lumax_GetDeviceInfo(int physicalDevice, int infoID, uint8_t *inBuffer, uint1
 
 // Done
 int Lumax_GetPhysicalDevices() {
-    uint32_t ret;
-    struct ftdi_context *ftdi;
+    uint32_t ret, numberOfDevices;
+    struct ftdi_context *ftHandle;
     struct ftdi_device_list *devlist, *curdev;
     char manufacturer[128], description[128], serialnumber[16];
 
-    if ((ftdi = ftdi_new()) == 0) {
+    if ((ftHandle = ftdi_new()) == 0) {
 #ifdef DEBUG_POSSIBLE
-        if (lumax_verbosity & DBG_ERROR)
+        if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
             fprintf(stderr, "[ERROR] Lumax_GetPhysicalDevices: ftdi_new failed.\n");
 #endif
-        return EXIT_FAILURE;
+        Lumax_CloseDevice(ftHandle);
+        return -1;
     }
 
-    if ((ret = ftdi_usb_find_all(ftdi, &devlist, vid, pid)) < 0) {
+    if ((ret = ftdi_usb_find_all(ftHandle, &devlist, vid, pid)) < 0) {
 #ifdef DEBUG_POSSIBLE
-        if (lumax_verbosity & DBG_ERROR)
-            fprintf(stderr, "[ERROR] Lumax_GetPhysicalDevices: ftdi_usb_find_all failed: %d (%s)\n", ret, ftdi_get_error_string(ftdi));
+        if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
+            fprintf(stderr, "[ERROR] Lumax_GetPhysicalDevices: ftdi_usb_find_all failed: %d (%s)\n", ret, ftdi_get_error_string(ftHandle));
 #endif
-        return EXIT_FAILURE;
+        Lumax_CloseDevice(ftHandle);
+        return -1;
+    }
+    numberOfDevices = ret;
+
+    if (numberOfDevices < 1) {
+#ifdef DEBUG_POSSIBLE
+        if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
+            fprintf(stderr, "[ERROR] Lumax_GetPhysicalDevices: No device detected.\n");
+#endif
+        Lumax_CloseDevice(ftHandle);
+        return -1;
     }
 
 #ifdef DEBUG_POSSIBLE
-    if (lumax_verbosity & DBG_INFO)
-        printf("[INFO] Lumax_GetPhysicalDevices: Number of devices is %d\n", ret);
+    if (lumax_verbosity & DBG_INFO || lumax_verbosity & DBG_ALL)
+        printf("[INFO] Lumax_GetPhysicalDevices: Number of devices is %d\n", numberOfDevices);
 #endif
 
     int i = 0;
-    for (curdev = devlist; curdev != NULL; i++) {
+    for (curdev = devlist; curdev != NULL; ++i) {
 #ifdef DEBUG_POSSIBLE
-        if (lumax_verbosity & DBG_INFO)
+        if (lumax_verbosity & DBG_INFO || lumax_verbosity & DBG_ALL)
             printf("[INFO] Lumax_GetPhysicalDevices: Checking device: %d\n", i);
 #endif
-        if ((ret = ftdi_usb_get_strings(ftdi, curdev->dev, manufacturer, 128, description, 128, serialnumber, 16)) < 0) {
+        if ((ret = ftdi_usb_get_strings(ftHandle, curdev->dev, manufacturer, 128, description, 128, serialnumber, 16)) < 0) {
 #ifdef DEBUG_POSSIBLE
-            if (lumax_verbosity & DBG_ERROR)
-                fprintf(stderr, "[ERROR] Lumax_GetPhysicalDevices: ftdi_usb_get_strings failed: %d (%s)\n", ret, ftdi_get_error_string(ftdi));
+            if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
+                fprintf(stderr, "[ERROR] Lumax_GetPhysicalDevices: ftdi_usb_get_strings failed: %d (%s)\n", ret, ftdi_get_error_string(ftHandle));
 #endif
-            return EXIT_FAILURE;
+            Lumax_CloseDevice(ftHandle);
+            return -1;
         }
+
+        if (serialnumber[0] == '\0') {
 #ifdef DEBUG_POSSIBLE
-        if (lumax_verbosity & DBG_INFO)
-            printf("[INFO] Lumax_GetPhysicalDevices: Manufacturer: %s, Description: %s\n\n", manufacturer, description);
+            if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
+                fprintf(stderr, "[ERROR] Lumax_GetPhysicalDevices: serialnumber empty.\n");
 #endif
+            Lumax_CloseDevice(ftHandle);
+            return -1;
+        }
+
+        printf("[DEBUG] Lumax_GetPhysicalDevices: *serialnumber 0x%x.\n", (unsigned int)(uintptr_t)serialnumber);
+
+#ifdef DEBUG_POSSIBLE
+        if (lumax_verbosity & DBG_INFO || lumax_verbosity & DBG_ALL) {
+            printf("[INFO] Lumax_GetPhysicalDevices: Manufacturer: %s, Description: %s\n", manufacturer, description);
+            printf("[INFO] Lumax_GetPhysicalDevices: Serialnumber: %s\n", serialnumber);
+        }
+#endif
+        // TODO: handle multiple Devices. use first device for now
+        memcpy(SerialNumber, serialnumber, 16);
+        // handle next device
         curdev = curdev->next;
     }
 
-    // TODO: multiple Devices
-    if (ret > 0)
-        memcpy(SerialNumber, serialnumber, 16);
-
     ftdi_list_free(&devlist);
-    if (ftdi) ftdi_free(ftdi);
-    return ret;
+    Lumax_CloseDevice(ftHandle);
+    return numberOfDevices;
 }
 
 // Done
@@ -587,6 +603,7 @@ int Lumax_WaitForBuffer(void* handle, int timeOut, int *timeToWait, int *bufferC
             writeb[5] = 0;
             writeb[6] = 4;
             writeToDev(handle, writeb, 7u);
+            //usleep(1000u);
             if (!readFromDev(handle, readb, 4u) && readb[0] == writeb[6]) {
                 *bufferChanged = readb[3] >= 0;
                 uint32_t u1; 
@@ -596,7 +613,7 @@ int Lumax_WaitForBuffer(void* handle, int timeOut, int *timeToWait, int *bufferC
                     u1 = unknown45;
                 *timeToWait = 1000 * (readb[1] + (readb[2] << 8) + MaxPoints * ((readb[3] & 127u) - 1)) / u1;
 #ifdef DEBUG_POSSIBLE
-                if (lumax_verbosity & DBG_WAITFORBUFFER)
+                if (lumax_verbosity & DBG_WAITFORBUFFER || lumax_verbosity & DBG_ALL)
                     printf("[DEBUG] Lumax_WaitForBuffer: timeToWait = %d\n", *timeToWait);
 #endif
                 result = 0;
@@ -610,7 +627,7 @@ int Lumax_WaitForBuffer(void* handle, int timeOut, int *timeToWait, int *bufferC
         return result;
     int32_t sleepms = TimeOffset - (timeGetTime() - BufferTime);
 #ifdef DEBUG_POSSIBLE
-    if (lumax_verbosity & DBG_WAITFORBUFFER)
+    if (lumax_verbosity & DBG_WAITFORBUFFER || lumax_verbosity & DBG_ALL)
         printf("[DEBUG] Lumax_WaitForBuffer: sleepms = %d\n", sleepms);
 #endif
     if (!unknown52) {
@@ -632,7 +649,7 @@ int Lumax_WaitForBuffer(void* handle, int timeOut, int *timeToWait, int *bufferC
     if (sleepms <= timeOut) {
         if (sleepms > 0 && sleepms <= 1000) {
 #ifdef DEBUG_POSSIBLE
-            if (lumax_verbosity & DBG_WAITFORBUFFER)
+            if (lumax_verbosity & DBG_WAITFORBUFFER || lumax_verbosity & DBG_ALL)
                 printf("[DEBUG] Lumax_WaitForBuffer: (1) waiting %d ms\n", sleepms);
 #endif
             usleep(sleepms * 1000);
@@ -643,7 +660,7 @@ int Lumax_WaitForBuffer(void* handle, int timeOut, int *timeToWait, int *bufferC
             *timeToWait = 0;
     } else {
 #ifdef DEBUG_POSSIBLE
-        if (lumax_verbosity & DBG_WAITFORBUFFER)
+        if (lumax_verbosity & DBG_WAITFORBUFFER || lumax_verbosity & DBG_ALL)
             printf("[DEBUG] Lumax_WaitForBuffer: (2) waiting %d ms\n", timeOut);
 #endif
         usleep(timeOut * 1000);
@@ -653,7 +670,7 @@ int Lumax_WaitForBuffer(void* handle, int timeOut, int *timeToWait, int *bufferC
             *timeToWait = sleepms - timeOut;
     }
 #ifdef DEBUG_POSSIBLE
-    if (lumax_verbosity & DBG_WAITFORBUFFER)
+    if (lumax_verbosity & DBG_WAITFORBUFFER || lumax_verbosity & DBG_ALL)
         printf("[DEBUG] Lumax_WaitForBuffer: result = %d\n", result);
 #endif
     return 0;
@@ -663,9 +680,10 @@ int Lumax_WaitForBuffer(void* handle, int timeOut, int *timeToWait, int *bufferC
 int Lumax_CloseDevice(void* handle) {
     struct ftdi_context *ftHandle = (struct ftdi_context*)handle;
 #ifdef DEBUG_POSSIBLE
-    if (lumax_verbosity & DBG_GENERAL)
-        printf("[DEBUG] Lumax_CloseDevice: Closing device handle 0x%x.\n", (unsigned int)(uintptr_t)ftHandle);
+    if (lumax_verbosity & DBG_GENERAL || lumax_verbosity & DBG_ALL)
+        printf("[DEBUG] Lumax_CloseDevice: Closing device with handle 0x%x.\n", (unsigned int)(uintptr_t)ftHandle);
 #endif
+    clearBuffer(ftHandle);
     int ret = ftdi_usb_close(ftHandle);
     if (ftHandle) ftdi_free(ftHandle);
     return ret;
@@ -681,7 +699,7 @@ int Lumax_SendFrame(void *handle, TLumax_Point *points, int numOfPoints, int sca
     int result = 1;
 
 #ifdef DEBUG_POSSIBLE
-    if (lumax_verbosity & DBG_SENDFRAME) {
+    if (lumax_verbosity & DBG_SENDFRAME || lumax_verbosity & DBG_ALL) {
         printf("[DEBUG] Lumax_SendFrame: Device handle = 0x%x.\n", (unsigned int)(uintptr_t)handle);
         printf("[DEBUG] Lumax_SendFrame: numOfPoints = %d.\n", numOfPoints);
         for (int i = 0; i < numOfPoints; ++i)
@@ -726,7 +744,7 @@ int Lumax_SendFrame(void *handle, TLumax_Point *points, int numOfPoints, int sca
             uint16_t residual = numOfPoints % MaxPoints;
             if (residual) ++maxLoops;
 #ifdef DEBUG_POSSIBLE
-            if (lumax_verbosity & DBG_SENDFRAME) {
+            if (lumax_verbosity & DBG_SENDFRAME || lumax_verbosity & DBG_ALL) {
                 printf("[DEBUG] Lumax_SendFrame: maxLoops = %d, residual = %d, TTLAvailable = %d.\n", maxLoops, residual, TTLAvailable);
             }
 #endif
@@ -869,7 +887,7 @@ int Lumax_SendFrame(void *handle, TLumax_Point *points, int numOfPoints, int sca
                         }
                         TimeOffset = 1000 * numOfPoints / scanSpeed; // die zu erwartende Zeit, bis der nächste Frame gesendet werden kann
 #ifdef DEBUG_POSSIBLE
-                        if (lumax_verbosity & DBG_SENDFRAME)
+                        if (lumax_verbosity & DBG_SENDFRAME || lumax_verbosity & DBG_ALL)
                             printf("[DEBUG] Lumax_SendFrame: TimeOffset = %d\n", TimeOffset);
 #endif
                         unknown45 = ScanSpeed;
@@ -887,7 +905,7 @@ int Lumax_SendFrame(void *handle, TLumax_Point *points, int numOfPoints, int sca
         }
     }
 #ifdef DEBUG_POSSIBLE
-    if (lumax_verbosity & DBG_SENDFRAME)
+    if (lumax_verbosity & DBG_SENDFRAME || lumax_verbosity & DBG_ALL)
         printf("[DEBUG] Lumax_SendFrame: result = %d\n", result);
 #endif
     return result;
@@ -979,7 +997,7 @@ int Lumax_DongleCom(void* handle, int flag, int address, int writeVar, int *read
         result = 1;
     
 #ifdef DEBUG_POSSIBLE
-    //if (lumax_verbosity & DBG_SETDMXMODE)
+    if (lumax_verbosity & DBG_SETDMXMODE || lumax_verbosity & DBG_ALL)
         printf("[DEBUG] Lumax_DongleCom: result = %d\n", result);
 #endif
     return result;
@@ -1017,7 +1035,7 @@ int Lumax_SetDmxMode(void *handle, uint8_t a2, uint8_t a3) {
         result = 1;
     
 #ifdef DEBUG_POSSIBLE
-    if (lumax_verbosity & DBG_SETDMXMODE)
+    if (lumax_verbosity & DBG_SETDMXMODE || lumax_verbosity & DBG_ALL)
         printf("[DEBUG] Lumax_SetDmxMode: result = %d\n", result);
 #endif
     return result;
@@ -1035,7 +1053,7 @@ void* Lumax_OpenDevice(int numDev, int channel) {
             uint8_t id[idSize];
             if (!readID(ftHandle, id, idSize)) {
 #ifdef DEBUG_POSSIBLE
-                if (lumax_verbosity & DBG_OPENDEVICE) {
+                if (lumax_verbosity & DBG_OPENDEVICE || lumax_verbosity & DBG_ALL) {
                     printf("[DEBUG] Lumax_OpenDevice: read id successfully.\n");
                     for (int i = 0; i < idSize; ++i)
                         printf("[DEBUG] Lumax_OpenDevice: id[%d] = %d (%c).\n", i, id[i], id[i]);
@@ -1044,7 +1062,7 @@ void* Lumax_OpenDevice(int numDev, int channel) {
 #endif
                 if ((id[4] & 128u) != 0) {
 #ifdef DEBUG_POSSIBLE
-                    if (lumax_verbosity & DBG_OPENDEVICE)
+                    if (lumax_verbosity & DBG_OPENDEVICE || lumax_verbosity & DBG_ALL)
                         printf("[DEBUG] Lumax_OpenDevice: setting flag TTLAvailable.\n");
 #endif
                     TTLAvailable |= 1u;
@@ -1052,7 +1070,7 @@ void* Lumax_OpenDevice(int numDev, int channel) {
 
                 if (id[4] >= 7u) {
 #ifdef DEBUG_POSSIBLE
-                    if (lumax_verbosity & DBG_OPENDEVICE)
+                    if (lumax_verbosity & DBG_OPENDEVICE || lumax_verbosity & DBG_ALL)
                         printf("[DEBUG] Lumax_OpenDevice: setting flag BufferLayout = 5.\n");
 #endif
                     BufferLayout = 5;
@@ -1062,7 +1080,7 @@ void* Lumax_OpenDevice(int numDev, int channel) {
                 uint8_t deviceInfo[devSize];
                 if (!readMemory(ftHandle, deviceInfo, 0, devSize)) { // Achtung, andere Logik als in IDA. Außerdem werden bei der Linux-Lib 15 bits statt 9 gelesen
 #ifdef DEBUG_POSSIBLE
-                    if (lumax_verbosity & DBG_OPENDEVICE) {
+                    if (lumax_verbosity & DBG_OPENDEVICE || lumax_verbosity & DBG_ALL) {
                         printf("[DEBUG] Lumax_OpenDevice: read device Info successfully.\n");
                         for (int i = 0; i < devSize; ++i)
                             printf("[DEBUG] Lumax_OpenDevice: deviceInfo[%d] = %d (%c).\n", i, deviceInfo[i], deviceInfo[i]);
@@ -1088,7 +1106,7 @@ void* Lumax_OpenDevice(int numDev, int channel) {
                     printf("Lumax_OpenDevice: ret = %d\n", ret);
                 }
 #ifdef DEBUG_POSSIBLE
-                if (lumax_verbosity & DBG_GENERAL) {
+                if (lumax_verbosity & DBG_GENERAL || lumax_verbosity & DBG_ALL) {
                     printf("[DEBUG] Lumax_OpenDevice: opened Lumax device with the following settings:\n");
                     printf("            BufferLayout = %d\n", BufferLayout);
                     printf("            TTLAvailable = %d\n", TTLAvailable);
@@ -1098,19 +1116,19 @@ void* Lumax_OpenDevice(int numDev, int channel) {
 
 
 #ifdef DEBUG_POSSIBLE
-                if (lumax_verbosity & DBG_OPENDEVICE)
+                if (lumax_verbosity & DBG_OPENDEVICE || lumax_verbosity & DBG_ALL)
                     printf("[DEBUG] Lumax_OpenDevice: calling Lumax_StopFrame.\n");
 #endif
                 Lumax_StopFrame(ftHandle);
 
 #ifdef DEBUG_POSSIBLE
-                if (lumax_verbosity & DBG_OPENDEVICE)
+                if (lumax_verbosity & DBG_OPENDEVICE || lumax_verbosity & DBG_ALL)
                     printf("[DEBUG] Lumax_OpenDevice: calling Lumax_SetDmxMode.\n");
 #endif
                 Lumax_SetDmxMode(ftHandle, 0, 0); // schaltet DMX aus
 
 #ifdef DEBUG_POSSIBLE
-                if (lumax_verbosity & DBG_OPENDEVICE)
+                if (lumax_verbosity & DBG_OPENDEVICE || lumax_verbosity & DBG_ALL)
                     printf("[DEBUG] Lumax_OpenDevice: calling Lumax_SetTTL.\n");
 #endif
                 Lumax_SetTTL(ftHandle, 0);
