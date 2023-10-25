@@ -165,7 +165,7 @@ int isOpen(void *handle) {
 #endif
                     Lumax_CloseDevice(handle);
                 }
-                if (openDev(0, handle)) { // TODO, multiple devices
+                if (openDev(0, handle)) { // TODO: handle multiple devices
 #ifdef DEBUG_POSSIBLE
                     if (lumax_verbosity & DBG_ISOPEN || lumax_verbosity & DBG_ALL)
                         printf("[DEBUG] isOpen: Opening device with handle 0x%x failed.\n", (unsigned int)(uintptr_t)handle);
