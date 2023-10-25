@@ -72,14 +72,13 @@ uint32_t timeGetTime() {
 int openDev(int numDev, void **handle) {
     uint32_t ret;
     struct ftdi_context *ftHandle;
-    int result = 1;
 
     if ((ftHandle = ftdi_new()) == 0) {
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
             fprintf(stderr, "[ERROR] openDev: ftdi_new failed.\n");
 #endif
-        return -1;
+        return 1;
     }
 
     // TODO: check if device is already open
@@ -88,7 +87,7 @@ int openDev(int numDev, void **handle) {
         if (lumax_verbosity & DBG_INFO || lumax_verbosity & DBG_ALL)
             printf("[INFO] openDev: Device with SerialNumber %s and handle 0x%x already open\n", SerialNumber, (unsigned int)(uintptr_t)ftHandle);
 #endif
-        return 0;
+        return 1;
     }
 
     if ((ret = ftdi_usb_open_desc(ftHandle, vid, pid, NULL, SerialNumber)) < 0) {
@@ -96,7 +95,7 @@ int openDev(int numDev, void **handle) {
         if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
             fprintf(stderr, "[ERROR] openDev: ftdi_usb_open_desc failed: %d\n", ret);
 #endif
-        return -1;
+        return 1;
     }
 
 #ifdef DEBUG_POSSIBLE
@@ -108,7 +107,7 @@ int openDev(int numDev, void **handle) {
     /*int chunksize = 256;
     if (ftdi_write_data_set_chunksize(ftHandle, chunksize) < 0 || ftdi_read_data_set_chunksize(ftHandle, chunksize) < 0) {
         fprintf(stderr, "[ERROR] openDev: can not set chunksize: %s\n", ftdi_get_error_string(ftHandle));
-        return -1;
+        return 1;
     }*/
 
     ftdi_set_latency_timer(ftHandle, 2);
@@ -148,7 +147,7 @@ void checkIfBusy(void *handle, uint32_t ftStatus) {
 
 // Done
 int isOpen(void *handle) {
-    int result = -1; // -1 means error, device is closed!
+    int result = 1; // 1 means error, device is closed!
     if (handle > 0) {
         if (unknown52)
             return 0;
@@ -217,7 +216,7 @@ int writeToDev(void *handle, uint8_t *buffer, uint32_t bytesToWrite) {
         }
 #endif
         checkIfBusy(handle, ftStatus);
-        return -1;
+        return 1;
     }
     
     return 0;
@@ -227,7 +226,7 @@ int writeToDev(void *handle, uint8_t *buffer, uint32_t bytesToWrite) {
 int readFromDev(void *handle, uint8_t *buffer, uint32_t bytesToRead) {
     /*uint32_t totalBytesReceived = 0;
     int result = 0;
-    while (totalBytesReceived < bytesToRead && result != -1) {
+    while (totalBytesReceived < bytesToRead && result != 1) {
         uint32_t bytesReceived;
         result = readFromDev2(handle, buffer, bytesToRead, &bytesReceived);
         totalBytesReceived += bytesReceived;
@@ -246,7 +245,7 @@ int readFromDev2(void *handle, uint8_t *buffer, uint32_t bytesToRead, uint32_t* 
         if (lumax_verbosity & DBG_WARN || lumax_verbosity & DBG_ALL) {
             printf("[WARN] readFromDev: ftdi_read_data failed with error code %d (%s).\n", result, ftdi_get_error_string(ftHandle));
         }
-        return -1;
+        return 1;
     }
 #endif
 
@@ -311,7 +310,7 @@ int readID(void *handle, uint8_t *arr, uint16_t size) {
         if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
             fprintf(stderr, "[ERROR] readID: array not initialized.\n");
 #endif
-        return -1;
+        return 1;
     }
 
     uint8_t buffer[7] = {0xc9, 0, 0, 0, 0, 0, 0xc9};
@@ -320,7 +319,7 @@ int readID(void *handle, uint8_t *arr, uint16_t size) {
         if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
             fprintf(stderr, "[ERROR] readID: write to device failed.\n");
 #endif
-        return -1;
+        return 1;
     }
 
     usleep(50000u);
@@ -331,7 +330,7 @@ int readID(void *handle, uint8_t *arr, uint16_t size) {
         if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
             fprintf(stderr, "[ERROR] readID: check failed.\n");
 #endif
-        return -1;
+        return 1;
     }
             
     // read id
@@ -351,7 +350,7 @@ int readID(void *handle, uint8_t *arr, uint16_t size) {
         if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
             fprintf(stderr, "[ERROR] readID: read checksum failed.\n");
 #endif
-        return -1;
+        return 1;
     }
 
     // calculate checksum
@@ -364,7 +363,7 @@ int readID(void *handle, uint8_t *arr, uint16_t size) {
         if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
             fprintf(stderr, "[ERROR] readID: checksum invalid.\n");
 #endif
-        return -1;
+        return 1;
     }
 
     return 0;
@@ -475,7 +474,7 @@ int Lumax_GetPhysicalDevices() {
             fprintf(stderr, "[ERROR] Lumax_GetPhysicalDevices: ftdi_new failed.\n");
 #endif
         Lumax_CloseDevice(ftHandle);
-        return -1;
+        return 1;
     }
 
     if ((ret = ftdi_usb_find_all(ftHandle, &devlist, vid, pid)) < 0) {
@@ -484,7 +483,7 @@ int Lumax_GetPhysicalDevices() {
             fprintf(stderr, "[ERROR] Lumax_GetPhysicalDevices: ftdi_usb_find_all failed: %d (%s)\n", ret, ftdi_get_error_string(ftHandle));
 #endif
         Lumax_CloseDevice(ftHandle);
-        return -1;
+        return 1;
     }
     numberOfDevices = ret;
 
@@ -494,7 +493,7 @@ int Lumax_GetPhysicalDevices() {
             fprintf(stderr, "[ERROR] Lumax_GetPhysicalDevices: No device detected.\n");
 #endif
         Lumax_CloseDevice(ftHandle);
-        return -1;
+        return 1;
     }
 
 #ifdef DEBUG_POSSIBLE
@@ -514,7 +513,7 @@ int Lumax_GetPhysicalDevices() {
                 fprintf(stderr, "[ERROR] Lumax_GetPhysicalDevices: ftdi_usb_get_strings failed: %d (%s)\n", ret, ftdi_get_error_string(ftHandle));
 #endif
             Lumax_CloseDevice(ftHandle);
-            return -1;
+            return 1;
         }
 
         if (serialnumber[0] == '\0') {
@@ -523,7 +522,7 @@ int Lumax_GetPhysicalDevices() {
                 fprintf(stderr, "[ERROR] Lumax_GetPhysicalDevices: serialnumber empty.\n");
 #endif
             Lumax_CloseDevice(ftHandle);
-            return -1;
+            return 1;
         }
 
 #ifdef DEBUG_POSSIBLE
@@ -606,7 +605,6 @@ int Lumax_WaitForBuffer(void* handle, int timeOut, int *timeToWait, int *bufferC
             writeb[5] = 0;
             writeb[6] = 4;
             writeToDev(handle, writeb, 7u);
-            //usleep(1000u);
             if (!readFromDev(handle, readb, 4u) && readb[0] == writeb[6]) {
                 *bufferChanged = readb[3] >= 0;
                 uint32_t u1; 
@@ -1099,7 +1097,7 @@ void* Lumax_OpenDevice(int numDev, int channel) {
                     if ((Flavor & unknown50) == 255)
                         Flavor = 4;
 #ifdef DEBUG_POSSIBLE
-                    if (lumax_verbosity & DBG_OPENDEVICE)
+                    if (lumax_verbosity & DBG_OPENDEVICE || lumax_verbosity & DBG_ALL)
                         printf("[DEBUG] Lumax_OpenDevice: device flavor = %d, unknown50 = %d, unknown52 = %d, unknown53 = %d\n", Flavor, unknown50, unknown52, unknown53);
 #endif
                     */
