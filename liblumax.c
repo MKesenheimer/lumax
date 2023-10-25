@@ -577,6 +577,11 @@ int Lumax_SetTTL(void *handle, uint8_t TTL) {
 
 // Done
 int Lumax_WaitForBuffer(void* handle, int timeOut, int *timeToWait, int *bufferChanged) {
+    // with libftdi the buffer is handled differently (without threading)
+    // Lumax_WaitForBuffer is therefore not necessary. 
+    return 0;
+
+    // the following is never called, but is here for debugging purposes
     int result = 1;
     uint8_t writeb[7], readb[4];
     if (timeToWait && bufferChanged) {
