@@ -57,7 +57,7 @@ uint32_t IsBusy = 0; // flags[30], pos = 1432
 uint32_t BusyTime; // flags[37], pos = 1460
 
 // DEBUG Flags
-uint32_t lumax_verbosity = DBG_ALL; 
+uint32_t lumax_verbosity = 0; //DBG_ALL;
 
 // Done
 #ifndef WINDOWS
@@ -526,7 +526,10 @@ int Lumax_GetPhysicalDevices() {
             return -1;
         }
 
-        printf("[DEBUG] Lumax_GetPhysicalDevices: *serialnumber 0x%x.\n", (unsigned int)(uintptr_t)serialnumber);
+#ifdef DEBUG_POSSIBLE
+        if (lumax_verbosity & DBG_GENERAL || lumax_verbosity & DBG_ALL)
+            printf("[DEBUG] Lumax_GetPhysicalDevices: *serialnumber 0x%x.\n", (unsigned int)(uintptr_t)serialnumber);
+#endif
 
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_INFO || lumax_verbosity & DBG_ALL) {
