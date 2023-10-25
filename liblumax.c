@@ -117,7 +117,7 @@ void checkIfBusy(void *handle, FT_STATUS ftStatus) {
 
 // Done
 int isOpen(void *handle) {
-    int result = 1;
+    int result = 1; // 1 means error, device is closed!
     if (handle > 0) {
         if (unknown52)
             return 0;
@@ -159,7 +159,7 @@ int isOpen(void *handle) {
                 clearBuffer(handle);
                 QueueClearBuffer = 0;
             }
-            result = 0;
+            result = 0; // everything is good, device is open
         }
     }
     return result;
@@ -444,7 +444,7 @@ int Lumax_GetPhysicalDevices() {
 // Done
 int Lumax_SetTTL(void *handle, uint8_t TTL) {
     int result = 1;
-    if (!isOpen(handle)) {
+    if (!isOpen(handle)) { // device is open
         TTLBuffer = TTL;
         if (unknown52)
             return 0;
@@ -479,7 +479,7 @@ int Lumax_WaitForBuffer(void* handle, int timeOut, int *timeToWait, int *bufferC
     }
     // if TimeOut = 0 -> Frage Status ab und warte nicht
     if (!timeOut && timeToWait && bufferChanged) {
-        if (!isOpen(handle)) {
+        if (!isOpen(handle)) { // device is open
             if (unknown52) {
                 int32_t sleepms = TimeOffset - (timeGetTime() - BufferTime);
                 if (sleepms <= 0) {
@@ -518,7 +518,7 @@ int Lumax_WaitForBuffer(void* handle, int timeOut, int *timeToWait, int *bufferC
     }
     
     // else, timeOut != 0
-    if (isOpen(handle))
+    if (isOpen(handle)) // device is closed, return
         return result;
     int32_t sleepms = TimeOffset - (timeGetTime() - BufferTime);
 #ifdef DEBUG_POSSIBLE
@@ -616,7 +616,7 @@ int Lumax_SendFrame(void *handle, TLumax_Point *points, int numOfPoints, int sca
     }
 
     // fill the buffer and send to device
-    if (!isOpen(handle)) {
+    if (!isOpen(handle)) { // device is open
         if (numOfPoints > 0 && 16 * MaxPoints / 2 >= numOfPoints) {
             if (scanSpeed < MinScanSpeed) scanSpeed = MinScanSpeed;
             else if (scanSpeed > MaxScanSpeed) scanSpeed = MaxScanSpeed;
