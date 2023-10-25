@@ -577,7 +577,7 @@ int Lumax_SetTTL(void *handle, uint8_t TTL) {
 
 // Done
 int Lumax_WaitForBuffer(void* handle, int timeOut, int *timeToWait, int *bufferChanged) {
-    // with libftdi the buffer is handled differently (without threading)
+    // with libftdi, the buffer is handled differently (without threading)
     // Lumax_WaitForBuffer is therefore not necessary. 
     return 0;
 
@@ -631,6 +631,7 @@ int Lumax_WaitForBuffer(void* handle, int timeOut, int *timeToWait, int *bufferC
     // else, timeOut != 0
     if (isOpen(handle)) // device is closed, return
         return result;
+    
     int32_t sleepms = TimeOffset - (timeGetTime() - BufferTime);
 #ifdef DEBUG_POSSIBLE
     if (lumax_verbosity & DBG_WAITFORBUFFER || lumax_verbosity & DBG_ALL)
