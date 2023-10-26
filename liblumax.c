@@ -224,7 +224,7 @@ int writeFrameBuffer(void *handle, uint8_t *frameBuffer, uint16_t frameBufferSiz
     if (writeToDev(handle, writeb, 7) || writeToDev(handle, frameBuffer, numberOfBytes)) {
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_WRITEFRAMEBUFFER || lumax_verbosity & DBG_ALL)
-            fprintf(stderr,"[Error] writeFrameBuffer: writeToDev failed.\n");
+            fprintf(stderr, "[ERROR] writeFrameBuffer: writeToDev failed.\n");
 #endif
         return 1;
     }
@@ -233,7 +233,7 @@ int writeFrameBuffer(void *handle, uint8_t *frameBuffer, uint16_t frameBufferSiz
     if (readFromDev(handle, readb, 2u) || readb[0] != writeb[6] || readb[1] != 0x55) {
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_WRITEFRAMEBUFFER || lumax_verbosity & DBG_ALL)
-            fprintf(stderr,"[Error] writeFrameBuffer: readFromDev failed.\n");
+            fprintf(stderr, "[ERROR] writeFrameBuffer: readFromDev failed.\n");
 #endif
         return 1;
     }
@@ -320,7 +320,7 @@ int readMemory(void *handle, uint8_t *arr, uint16_t start, uint16_t end) {
     if (start < 0 || end <= 0 || start + end > 463) {
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_READMEMORY || lumax_verbosity & DBG_ALL)
-            fprintf(stderr,"[ERROR] readMemory: boundaries not ok.\n");
+            fprintf(stderr, "[ERROR] readMemory: boundaries not ok.\n");
 #endif
         return 1;
     }
@@ -352,7 +352,7 @@ int readMemory(void *handle, uint8_t *arr, uint16_t start, uint16_t end) {
     if (readb[0] != writeb[6] || readb[end + 1] != check) {
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_WRITEFRAMEBUFFER || lumax_verbosity & DBG_ALL)
-            fprintf(stderr,"[Error] readMemory: checksum failed.\n");
+            fprintf(stderr, "[ERROR] readMemory: checksum failed.\n");
 #endif
         return 1;
     }
@@ -543,7 +543,6 @@ int Lumax_SendFrame(void *handle, TLumax_Point *points, int numOfPoints, int sca
     TLumax_Point point;
     TLumax_Point *lpoints;
     lpoints = points;
-    int result = 1;
 
 #ifdef DEBUG_POSSIBLE
     if (lumax_verbosity & DBG_SENDFRAME || lumax_verbosity & DBG_ALL) {
@@ -553,6 +552,15 @@ int Lumax_SendFrame(void *handle, TLumax_Point *points, int numOfPoints, int sca
             printf("[DEBUG] Lumax_SendFrame: point%d: CH1 = %d, CH2 = %d, CH3 = %d, CH4 = %d, CH5 = %d.\n", i, lpoints[i].Ch1, lpoints[i].Ch2, lpoints[i].Ch3, lpoints[i].Ch4, lpoints[i].Ch5);
     }
 #endif
+
+    // fill the buffer and send to device
+    if (isOpen(handle)) { // device is open
+#ifdef DEBUG_POSSIBLE
+        if (lumax_verbosity & DBG_WARN || lumax_verbosity & DBG_ALL)
+            fprintf(stderr, "[WARN] Lumax_SendFrame: device is closed.\n");
+#endif
+        return 1;
+    }
 
     // if buffer is empty (initialization)
     if (!numOfPoints) {
@@ -570,183 +578,177 @@ int Lumax_SendFrame(void *handle, TLumax_Point *points, int numOfPoints, int sca
         numOfPoints = 1;
     }
 
-    // fill the buffer and send to device
-    if (!isOpen(handle)) { // device is open
-        if (numOfPoints > 0 && 16 * MaxPoints / 2 >= numOfPoints) {
-            if (scanSpeed < MinScanSpeed) scanSpeed = MinScanSpeed;
-            else if (scanSpeed > MaxScanSpeed) scanSpeed = MaxScanSpeed;
-
-            ++NumberOfFramesSend;
-            NumberOfPoints = numOfPoints;
-            ScanSpeed = scanSpeed;
-            TimeOffset = 0;
-            uint16_t maxLoops = numOfPoints / MaxPoints;
-            uint16_t residual = numOfPoints % MaxPoints;
-            if (residual) ++maxLoops;
+    if (numOfPoints <= 0 || numOfPoints > 16 * MaxPoints / 2) {
 #ifdef DEBUG_POSSIBLE
-            if (lumax_verbosity & DBG_SENDFRAME || lumax_verbosity & DBG_ALL) {
-                printf("[DEBUG] Lumax_SendFrame: maxLoops = %d, residual = %d, TTLAvailable = %d.\n", maxLoops, residual, TTLAvailable);
-            }
+        if (lumax_verbosity & DBG_WARN || lumax_verbosity & DBG_ALL)
+            fprintf(stderr, "[WARN] Lumax_SendFrame: numOfPoints invalid.\n");
 #endif
-            // big loop to fill the buffer
-            int readOK;
-            int npoint = 0;
-            for (int i = 0; i < maxLoops; ++i) {
-                int pointsPerLoop;
-                if (i != 0)
-                    pointsPerLoop = MaxPoints;
-                else
-                    pointsPerLoop = residual;
+        return 1;
+    }
 
-                int k = 0;
-                if (Flavor == 2) {
-                    for (int j = 0; j < pointsPerLoop; ++j) {
-                        uint16_t l0 = lpoints[npoint].Ch1 >> 4;
-                        uint16_t l1 = lpoints[npoint].Ch2 >> 4;
-                        writeb[k++] = l0 / 256 + 16 * (l1 / 256);
-                        writeb[k++] = l0;
-                        writeb[k++] = l1;
-                        writeb[k++] = lpoints[npoint].Ch3 >> 8;
-                        writeb[k++] = lpoints[npoint].Ch4 >> 8;
-                        writeb[k++] = lpoints[npoint++].Ch5 >> 8;
-                    }
-                }
-
-                if (Flavor == 4) {
-                    for (int j = 0; j < pointsPerLoop; ++j) {
-                        uint16_t l0 = lpoints[npoint].Ch1 >> 4;
-                        uint16_t l1 = lpoints[npoint].Ch2 >> 4;
-                        //if ((l1 & ))
-                        writeb[k++] = l0 / 256 + 16 * (l1 / 256);
-                        writeb[k++] = l0;
-                        writeb[k++] = l1;
-                        writeb[k++] = lpoints[npoint].Ch3 >> 8;
-                        writeb[k++] = lpoints[npoint].Ch4 >> 8;
-                        writeb[k++] = lpoints[npoint].Ch5 >> 8;
-                        writeb[k++] = lpoints[npoint++].Ch8 >> 8;
-                    }
-                }
-
-                if (Flavor == 8) {
-                    for (int j = 0; j < pointsPerLoop; ++j) {
-                        uint8_t l0 = lpoints[npoint].Ch1 >> 4;
-                        uint8_t l1 = lpoints[npoint].Ch2 >> 4;
-                        writeb[k++] = l0 / 256 + 16 * (l1 / 256);
-                        writeb[k++] = l0;
-                        writeb[k++] = l1;
-                        writeb[k++] = lpoints[npoint].Ch3 >> 8;
-                        writeb[k++] = lpoints[npoint].Ch4 >> 8;
-                        writeb[k++] = lpoints[npoint].Ch5 >> 8;
-                        writeb[k++] = lpoints[npoint].Ch8 >> 8;
-                        writeb[k++] = lpoints[npoint++].Ch6 >> 8;
-                    }
-                }
-
-                if (Flavor == 16) {
-                    for (int j = 0; j < pointsPerLoop; ++j) {
-                        uint16_t l0 = lpoints[npoint].Ch1 >> 4;
-                        uint16_t l1 = lpoints[npoint].Ch2 >> 4;
-                        writeb[k++] = l0 / 256 + 16 * (l1 / 256);
-                        writeb[k++] = l0;
-                        writeb[k++] = l1;
-                        writeb[k++] = lpoints[npoint].Ch3 >> 8;
-                        writeb[k++] = lpoints[npoint].Ch4 >> 8;
-                        writeb[k++] = lpoints[npoint].Ch5 >> 8;
-                        writeb[k++] = lpoints[npoint].Ch8 >> 8;
-                        writeb[k++] = lpoints[npoint].Ch6 >> 8;
-                        writeb[k++] = lpoints[npoint++].Ch7 >> 8;
-                    }
-                }
-
-                if (Flavor == 1) {
-                    if (TTLAvailable & 1) {
-                        for (int j = 0; j < pointsPerLoop; ++j) {
-                            uint16_t l0 = lpoints[npoint].Ch1 >> 4;
-                            uint16_t l1 = lpoints[npoint].Ch2 >> 4;
-                            writeb[k++] = l0 / 256 + 16 * (l1 / 256);
-                            writeb[k++] = l0;
-                            writeb[k++] = l1;
-                            writeb[k++] = lpoints[npoint].Ch3 >> 8;
-                            writeb[k++] = lpoints[npoint].Ch4 >> 8;
-                            writeb[k++] = lpoints[npoint++].Ch5 >> 8;
-                        }
-                    } else if (TTLAvailable & 2) {
-                        for (int j = 0; j < pointsPerLoop; ++j) {
-                            uint16_t l0 = lpoints[npoint].Ch1 >> 4;
-                            uint16_t l1 = lpoints[npoint].Ch2 >> 4;
-                            writeb[k++] = l0 / 256 + 16 * (l1 / 256);
-                            writeb[k++] = l0;
-                            writeb[k++] = l1;
-                            writeb[k++] = lpoints[npoint].Ch3 >> 8;
-                            writeb[k++] = lpoints[npoint].Ch4 >> 8;
-                            writeb[k++] = lpoints[npoint].Ch5 >> 8;
-                            writeb[k++] = TTLBuffer;
-                            ++npoint;
-                        }
-                    } else {
-                        for (int j = 0; j < pointsPerLoop; ++j) {
-                            uint16_t l0 = lpoints[npoint].Ch1 >> 4;
-                            uint16_t l1 = lpoints[npoint].Ch2 >> 4;
-                            writeb[k++] = l0 / 256 + 16 * (l1 / 256);
-                            writeb[k++] = l0;
-                            writeb[k++] = l1;
-                            writeb[k++] = lpoints[npoint].Ch3 >> 8;
-                            writeb[k++] = lpoints[npoint].Ch4 >> 8;
-                            writeb[k++] = lpoints[npoint].Ch5 >> 8;
-                            writeb[k++] = lpoints[npoint++].TTL;
-                        }
-                    }
-                }
-
-                // write to Device
-                readOK = writeFrameBuffer(handle, writeb, 32768, pointsPerLoop * BytesPerFrame, NextLoopCounts + i, 0);
-                if (readOK) break;
-            }
-
-             // terminate frame, send scanspeed
-            if (!readOK) {
-                uint16_t cycles = ClockSpeed / scanSpeed;
-                writeb[0] = 3;
-                writeb[1] = residual;
-                writeb[2] = residual / 256;
-                writeb[3] = cycles;
-                writeb[4] = cycles / 256;
-                writeb[5] = NextLoopCounts + 16 * (maxLoops - 1);
-                writeb[6] = writeb[5] ^ writeb[4] ^ writeb[3] ^ writeb[2] ^ writeb[1] ^ writeb[0];
-                readOK = writeToDev(handle, writeb, 7u);
-                if (!readOK) {
-                    uint8_t readb[4];
-                    readOK = readFromDev(handle, readb, 4u);
-                    if (!readOK && readb[0] == writeb[6]) {
-                        if (readb[3] >= 0) {
-                            TimeUntilFree = 0;
-                        } else {
-                            readb[3] &= 127;
-                            TimeUntilFree = readb[1] + (readb[2] << 8) + MaxPoints * (readb[3] - 1);
-                            TimeUntilFree = 1000 * TimeUntilFree / ScanSpeed;
-                        }
-                        TimeOffset = 1000 * numOfPoints / scanSpeed; // die zu erwartende Zeit, bis der nächste Frame gesendet werden kann
+    if (scanSpeed < MinScanSpeed) scanSpeed = MinScanSpeed;
+    else if (scanSpeed > MaxScanSpeed) scanSpeed = MaxScanSpeed;
+    ++NumberOfFramesSend;
+    NumberOfPoints = numOfPoints;
+    ScanSpeed = scanSpeed;
+    TimeOffset = 0;
+    uint16_t maxLoops = numOfPoints / MaxPoints;
+    uint16_t residual = numOfPoints % MaxPoints;
+    if (residual) ++maxLoops;
+    
 #ifdef DEBUG_POSSIBLE
-                        if (lumax_verbosity & DBG_SENDFRAME || lumax_verbosity & DBG_ALL)
-                            printf("[DEBUG] Lumax_SendFrame: TimeOffset = %d\n", TimeOffset);
+    if (lumax_verbosity & DBG_SENDFRAME || lumax_verbosity & DBG_ALL) {
+        printf("[DEBUG] Lumax_SendFrame: maxLoops = %d, residual = %d, TTLAvailable = %d.\n", maxLoops, residual, TTLAvailable);
+    }
 #endif
-                        if (timeToWait)
-                            *timeToWait = TimeUntilFree;
-                        result = 0;
-                    }
-                }
-                if (NextLoopCounts)
-                    NextLoopCounts = 0;
-                else
-                    NextLoopCounts = 8;
+
+    // big loop to fill the buffer
+    int readOK;
+    int npoint = 0;
+    for (int i = 0; i < maxLoops; ++i) {
+        int pointsPerLoop;
+        if (i != 0)
+            pointsPerLoop = MaxPoints;
+        else
+            pointsPerLoop = residual;
+        int k = 0;
+        if (Flavor == 2) {
+            for (int j = 0; j < pointsPerLoop; ++j) {
+                uint16_t l0 = lpoints[npoint].Ch1 >> 4;
+                uint16_t l1 = lpoints[npoint].Ch2 >> 4;
+                writeb[k++] = l0 / 256 + 16 * (l1 / 256);
+                writeb[k++] = l0;
+                writeb[k++] = l1;
+                writeb[k++] = lpoints[npoint].Ch3 >> 8;
+                writeb[k++] = lpoints[npoint].Ch4 >> 8;
+                writeb[k++] = lpoints[npoint++].Ch5 >> 8;
             }
         }
+        if (Flavor == 4) {
+            for (int j = 0; j < pointsPerLoop; ++j) {
+                uint16_t l0 = lpoints[npoint].Ch1 >> 4;
+                uint16_t l1 = lpoints[npoint].Ch2 >> 4;
+                //if ((l1 & ))
+                writeb[k++] = l0 / 256 + 16 * (l1 / 256);
+                writeb[k++] = l0;
+                writeb[k++] = l1;
+                writeb[k++] = lpoints[npoint].Ch3 >> 8;
+                writeb[k++] = lpoints[npoint].Ch4 >> 8;
+                writeb[k++] = lpoints[npoint].Ch5 >> 8;
+                writeb[k++] = lpoints[npoint++].Ch8 >> 8;
+            }
+        }
+        if (Flavor == 8) {
+            for (int j = 0; j < pointsPerLoop; ++j) {
+                uint8_t l0 = lpoints[npoint].Ch1 >> 4;
+                uint8_t l1 = lpoints[npoint].Ch2 >> 4;
+                writeb[k++] = l0 / 256 + 16 * (l1 / 256);
+                writeb[k++] = l0;
+                writeb[k++] = l1;
+                writeb[k++] = lpoints[npoint].Ch3 >> 8;
+                writeb[k++] = lpoints[npoint].Ch4 >> 8;
+                writeb[k++] = lpoints[npoint].Ch5 >> 8;
+                writeb[k++] = lpoints[npoint].Ch8 >> 8;
+                writeb[k++] = lpoints[npoint++].Ch6 >> 8;
+            }
+        }
+        if (Flavor == 16) {
+            for (int j = 0; j < pointsPerLoop; ++j) {
+                uint16_t l0 = lpoints[npoint].Ch1 >> 4;
+                uint16_t l1 = lpoints[npoint].Ch2 >> 4;
+                writeb[k++] = l0 / 256 + 16 * (l1 / 256);
+                writeb[k++] = l0;
+                writeb[k++] = l1;
+                writeb[k++] = lpoints[npoint].Ch3 >> 8;
+                writeb[k++] = lpoints[npoint].Ch4 >> 8;
+                writeb[k++] = lpoints[npoint].Ch5 >> 8;
+                writeb[k++] = lpoints[npoint].Ch8 >> 8;
+                writeb[k++] = lpoints[npoint].Ch6 >> 8;
+                writeb[k++] = lpoints[npoint++].Ch7 >> 8;
+            }
+        }
+        if (Flavor == 1) {
+            if (TTLAvailable & 1) {
+                for (int j = 0; j < pointsPerLoop; ++j) {
+                    uint16_t l0 = lpoints[npoint].Ch1 >> 4;
+                    uint16_t l1 = lpoints[npoint].Ch2 >> 4;
+                    writeb[k++] = l0 / 256 + 16 * (l1 / 256);
+                    writeb[k++] = l0;
+                    writeb[k++] = l1;
+                    writeb[k++] = lpoints[npoint].Ch3 >> 8;
+                    writeb[k++] = lpoints[npoint].Ch4 >> 8;
+                    writeb[k++] = lpoints[npoint++].Ch5 >> 8;
+                }
+            } else if (TTLAvailable & 2) {
+                for (int j = 0; j < pointsPerLoop; ++j) {
+                    uint16_t l0 = lpoints[npoint].Ch1 >> 4;
+                    uint16_t l1 = lpoints[npoint].Ch2 >> 4;
+                    writeb[k++] = l0 / 256 + 16 * (l1 / 256);
+                    writeb[k++] = l0;
+                    writeb[k++] = l1;
+                    writeb[k++] = lpoints[npoint].Ch3 >> 8;
+                    writeb[k++] = lpoints[npoint].Ch4 >> 8;
+                    writeb[k++] = lpoints[npoint].Ch5 >> 8;
+                    writeb[k++] = TTLBuffer;
+                    ++npoint;
+                }
+            } else {
+                for (int j = 0; j < pointsPerLoop; ++j) {
+                    uint16_t l0 = lpoints[npoint].Ch1 >> 4;
+                    uint16_t l1 = lpoints[npoint].Ch2 >> 4;
+                    writeb[k++] = l0 / 256 + 16 * (l1 / 256);
+                    writeb[k++] = l0;
+                    writeb[k++] = l1;
+                    writeb[k++] = lpoints[npoint].Ch3 >> 8;
+                    writeb[k++] = lpoints[npoint].Ch4 >> 8;
+                    writeb[k++] = lpoints[npoint].Ch5 >> 8;
+                    writeb[k++] = lpoints[npoint++].TTL;
+                }
+            }
+        }
+        // write to Device
+        readOK = writeFrameBuffer(handle, writeb, 32768, pointsPerLoop * BytesPerFrame, NextLoopCounts + i, 0);
+        if (readOK) break;
     }
+
+     // terminate frame, send scanspeed
+    if (!readOK) {
+        uint16_t cycles = ClockSpeed / scanSpeed;
+        writeb[0] = 3;
+        writeb[1] = residual;
+        writeb[2] = residual / 256;
+        writeb[3] = cycles;
+        writeb[4] = cycles / 256;
+        writeb[5] = NextLoopCounts + 16 * (maxLoops - 1);
+        writeb[6] = writeb[5] ^ writeb[4] ^ writeb[3] ^ writeb[2] ^ writeb[1] ^ writeb[0];
+        readOK = writeToDev(handle, writeb, 7u);
+        if (!readOK) {
+            uint8_t readb[4];
+            readOK = readFromDev(handle, readb, 4u);
+            if (!readOK && readb[0] == writeb[6]) {
+                if (readb[3] >= 0) {
+                    TimeUntilFree = 0;
+                } else {
+                    readb[3] &= 127;
+                    TimeUntilFree = readb[1] + (readb[2] << 8) + MaxPoints * (readb[3] - 1);
+                    TimeUntilFree = 1000 * TimeUntilFree / ScanSpeed;
+                }
+                TimeOffset = 1000 * numOfPoints / scanSpeed; // die zu erwartende Zeit, bis der nächste Frame gesendet werden kann
 #ifdef DEBUG_POSSIBLE
-    if (lumax_verbosity & DBG_SENDFRAME || lumax_verbosity & DBG_ALL)
-        printf("[DEBUG] Lumax_SendFrame: result = %d\n", result);
+                if (lumax_verbosity & DBG_SENDFRAME || lumax_verbosity & DBG_ALL)
+                    printf("[DEBUG] Lumax_SendFrame: TimeOffset = %d\n", TimeOffset);
 #endif
-    return result;
+                if (timeToWait)
+                    *timeToWait = TimeUntilFree;
+            }
+        }
+        if (NextLoopCounts)
+            NextLoopCounts = 0;
+        else
+            NextLoopCounts = 8;
+    }
+
+    return 0;
 }
 
 // Done
@@ -881,81 +883,82 @@ void* Lumax_OpenDevice(int numDev, int channel) {
     uint32_t ftStatus;
     struct ftdi_context *ftHandle;
 
-    if (((0 < numDev) && (numDev < 9)) && (channel == 0)) {
-        if (!openDev(numDev, (void**)&ftHandle)) {
-            clearBuffer(ftHandle);
-            const uint8_t idSize = 16;
-            uint8_t id[idSize];
-            if (!readID(ftHandle, id, idSize)) {
+    if (((numDev < 1) || (numDev > 8)) || (channel != 0)) {
 #ifdef DEBUG_POSSIBLE
-                if (lumax_verbosity & DBG_OPENDEVICE || lumax_verbosity & DBG_ALL) {
-                    printf("[DEBUG] Lumax_OpenDevice: read id successfully.\n");
-                    for (int i = 0; i < idSize; ++i)
-                        printf("[DEBUG] Lumax_OpenDevice: id[%d] = %d (%c).\n", i, id[i], id[i]);
-                    printf("\n");
-                }
+        if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
+            fprintf(stderr, "[ERROR] Lumax_OpenDevice: numDev or channel invalid.\n");
 #endif
-                if ((id[4] & 128u) != 0) {
-#ifdef DEBUG_POSSIBLE
-                    if (lumax_verbosity & DBG_OPENDEVICE || lumax_verbosity & DBG_ALL)
-                        printf("[DEBUG] Lumax_OpenDevice: setting flag TTLAvailable.\n");
-#endif
-                    TTLAvailable |= 1u;
-                }
-
-                if (id[4] >= 7u) {
-#ifdef DEBUG_POSSIBLE
-                    if (lumax_verbosity & DBG_OPENDEVICE || lumax_verbosity & DBG_ALL)
-                        printf("[DEBUG] Lumax_OpenDevice: setting flag BufferLayout = 5.\n");
-#endif
-                    BufferLayout = 5;
-                }
-
-                const uint16_t devSize = 0x1cf;
-                uint8_t deviceInfo[devSize];
-                if (!readMemory(ftHandle, deviceInfo, 0, devSize)) { // Achtung, andere Logik als in IDA. Außerdem werden bei der Linux-Lib 15 bits statt 9 gelesen
-#ifdef DEBUG_POSSIBLE
-                    if (lumax_verbosity & DBG_OPENDEVICE || lumax_verbosity & DBG_ALL) {
-                        printf("[DEBUG] Lumax_OpenDevice: read device Info successfully.\n");
-                        for (int i = 0; i < devSize; ++i)
-                            printf("[DEBUG] Lumax_OpenDevice: deviceInfo[%d] = %d (%c).\n", i, deviceInfo[i], deviceInfo[i]);
-                        printf("\n");
-                    }
-#endif
-
-                    int ret = 0;
-                    Lumax_DongleCom(ftHandle, 1, 0x49D4B13Au, 0, &ret);
-                    printf("Lumax_OpenDevice: ret = %d\n", ret);
-                }
-#ifdef DEBUG_POSSIBLE
-                if (lumax_verbosity & DBG_GENERAL || lumax_verbosity & DBG_ALL) {
-                    printf("[DEBUG] Lumax_OpenDevice: opened Lumax device with the following settings:\n");
-                    printf("            BufferLayout = %d\n", BufferLayout);
-                    printf("            TTLAvailable = %d\n", TTLAvailable);
-                    printf("            Flavor       = %d\n", Flavor);
-                }
-#endif
-
-
-#ifdef DEBUG_POSSIBLE
-                if (lumax_verbosity & DBG_OPENDEVICE || lumax_verbosity & DBG_ALL)
-                    printf("[DEBUG] Lumax_OpenDevice: calling Lumax_StopFrame.\n");
-#endif
-                Lumax_StopFrame(ftHandle);
-
-#ifdef DEBUG_POSSIBLE
-                if (lumax_verbosity & DBG_OPENDEVICE || lumax_verbosity & DBG_ALL)
-                    printf("[DEBUG] Lumax_OpenDevice: calling Lumax_SetDmxMode.\n");
-#endif
-                Lumax_SetDmxMode(ftHandle, 0, 0); // schaltet DMX aus
-
-#ifdef DEBUG_POSSIBLE
-                if (lumax_verbosity & DBG_OPENDEVICE || lumax_verbosity & DBG_ALL)
-                    printf("[DEBUG] Lumax_OpenDevice: calling Lumax_SetTTL.\n");
-#endif
-                Lumax_SetTTL(ftHandle, 0);
-            }
-        } 
+        return NULL;
     }
+        
+    if (openDev(numDev, (void**)&ftHandle)) {
+#ifdef DEBUG_POSSIBLE
+        if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
+            fprintf(stderr, "[ERROR] Lumax_OpenDevice: openDev failed.\n");
+#endif
+        return NULL;
+    }
+
+    clearBuffer(ftHandle);
+    const uint8_t idSize = 16;
+    uint8_t id[idSize];
+    if (readID(ftHandle, id, idSize)) {
+#ifdef DEBUG_POSSIBLE
+        if (lumax_verbosity & DBG_WARN || lumax_verbosity & DBG_ALL)
+            printf("[WARN] Lumax_OpenDevice: readID failed.\n");
+    } else {
+        if (lumax_verbosity & DBG_INFO || lumax_verbosity & DBG_ALL) {
+            for (int i = 0; i < idSize; ++i)
+                printf("[INFO] Lumax_OpenDevice: id[%d] = %d (%c).\n", i, id[i], id[i]);
+            printf("\n");
+        }
+#endif
+    }
+
+    if ((id[4] & 128u) != 0) {
+#ifdef DEBUG_POSSIBLE
+        if (lumax_verbosity & DBG_OPENDEVICE || lumax_verbosity & DBG_ALL)
+            printf("[DEBUG] Lumax_OpenDevice: setting flag TTLAvailable.\n");
+#endif
+        TTLAvailable |= 1u;
+    }
+
+    if (id[4] >= 7u) {
+#ifdef DEBUG_POSSIBLE
+        if (lumax_verbosity & DBG_OPENDEVICE || lumax_verbosity & DBG_ALL)
+            printf("[DEBUG] Lumax_OpenDevice: setting flag BufferLayout = 5.\n");
+#endif
+        BufferLayout = 5;
+    }
+
+    const uint16_t devSize = 0x1cf;
+    uint8_t deviceInfo[devSize];
+    if (!readMemory(ftHandle, deviceInfo, 0, devSize)) {
+#ifdef DEBUG_POSSIBLE
+        if (lumax_verbosity & DBG_OPENDEVICE || lumax_verbosity & DBG_ALL) {
+            printf("[DEBUG] Lumax_OpenDevice: read device Info successfully.\n");
+            for (int i = 0; i < devSize; ++i)
+                printf("[DEBUG] Lumax_OpenDevice: deviceInfo[%d] = %d (%c).\n", i, deviceInfo[i], deviceInfo[i]);
+            printf("\n");
+        }
+#endif
+
+        int ret = 0;
+        Lumax_DongleCom(ftHandle, 1, 0x49D4B13Au, 0, &ret);
+    }
+
+#ifdef DEBUG_POSSIBLE
+    if (lumax_verbosity & DBG_GENERAL || lumax_verbosity & DBG_ALL) {
+        printf("[DEBUG] Lumax_OpenDevice: opened Lumax device with the following settings:\n");
+        printf("            BufferLayout = %d\n", BufferLayout);
+        printf("            TTLAvailable = %d\n", TTLAvailable);
+        printf("            Flavor       = %d\n", Flavor);
+    }
+#endif
+
+    Lumax_StopFrame(ftHandle);
+    Lumax_SetDmxMode(ftHandle, 0, 0); // schaltet DMX aus
+    Lumax_SetTTL(ftHandle, 0);
+
     return ftHandle;
 }
