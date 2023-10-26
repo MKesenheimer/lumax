@@ -15,8 +15,7 @@ int isBusy_uncertain(void *handle);
 int writeToDev(void *handle, uint8_t *buffer, uint32_t bytesToWrite);
 
 int readFromDev(void *handle, uint8_t *buffer, uint32_t bytesToRead);
-int readFromDev2(void *handle, uint8_t *buffer, uint32_t bytesToRead, uint32_t* bytesReceived);
 
-int writeFrameBuffer(void *handle, uint8_t *frameBuffer, uint16_t frameBufferSize, uint16_t numberOfBytes, uint8_t counter, int check, int flag);
+int writeFrameBuffer(void *handle, uint8_t *frameBuffer, uint16_t frameBufferSize, uint16_t numberOfBytes, uint8_t counter, int flag);
 
 int readMemory(void *handle, uint8_t *arr, uint16_t start, uint16_t end);
