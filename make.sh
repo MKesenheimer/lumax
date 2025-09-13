@@ -15,9 +15,9 @@ dotest=$2
 
 # macOS
 if [ "$platform" == "macOS" ]; then
-  gcc -c -fPIC -I/opt/local/include -I/opt/local/include/libftdi1 liblumax.c
-  gcc -shared     -fPIC -o liblumax_darwin.so    liblumax.o -L/opt/local/lib -lftdi1
-  gcc -dynamiclib -fPIC -o liblumax_darwin.dylib liblumax.o -L/opt/local/lib -lftdi1
+  gcc -c -fPIC -I/opt/homebrew/include/libftdi1 -I/opt/local/include/libftdi1 liblumax.c
+  gcc -shared     -fPIC -o liblumax_darwin.so    liblumax.o -L/opt/local/lib -L/opt/homebrew/lib -lftdi1
+  gcc -dynamiclib -fPIC -o liblumax_darwin.dylib liblumax.o -L/opt/local/lib -L/opt/homebrew/lib -lftdi1
 
   # set the install names in the shared libraries (in order to find with rpath)
   install_name_tool -id @rpath/liblumax_darwin.so liblumax_darwin.so
