@@ -355,8 +355,8 @@ class lumax_renderer:
             p = self.shapes[i].get_points()
             # insert blank point at the beginning
             index += 1
-            buffer.struct_arr[index].x = (255 * 255 * mirrorx) + (-1)**(mirrorx) * p[0, 0]
-            buffer.struct_arr[index].y = (255 * 255 * mirrory) + (-1)**(mirrory) * p[0, 1]
+            buffer.struct_arr[index].x = (255 * 255 * mirrorx) + (-1)**(mirrorx) * numpy.int32(p[0, 0])
+            buffer.struct_arr[index].y = (255 * 255 * mirrory) + (-1)**(mirrory) * numpy.int32(p[0, 1])
             buffer.struct_arr[index].r = 0
             buffer.struct_arr[index].g = 0
             buffer.struct_arr[index].b = 0
@@ -364,16 +364,16 @@ class lumax_renderer:
             # copy the points
             for j in range(0, len(p)):
                 index += 1
-                buffer.struct_arr[index].x = (255 * 255 * mirrorx) + (-1)**(mirrorx) * p[j, 0]
-                buffer.struct_arr[index].y = (255 * 255 * mirrory) + (-1)**(mirrory) * p[j, 1]
+                buffer.struct_arr[index].x = (255 * 255 * mirrorx) + (-1)**(mirrorx) * numpy.int32(p[j, 0])
+                buffer.struct_arr[index].y = (255 * 255 * mirrory) + (-1)**(mirrory) * numpy.int32(p[j, 1])
                 buffer.struct_arr[index].r = p[j, 2]
                 buffer.struct_arr[index].g = p[j, 3]
                 buffer.struct_arr[index].b = p[j, 4]
 
             # insert blank point at the end
             index += 1
-            buffer.struct_arr[index].x = (255 * 255 * mirrorx) + (-1)**(mirrorx) * p[len(p) - 1, 0]
-            buffer.struct_arr[index].y = (255 * 255 * mirrory) + (-1)**(mirrory) * p[len(p) - 1, 1]
+            buffer.struct_arr[index].x = (255 * 255 * mirrorx) + (-1)**(mirrorx) * numpy.int32(p[len(p) - 1, 0])
+            buffer.struct_arr[index].y = (255 * 255 * mirrory) + (-1)**(mirrory) * numpy.int32(p[len(p) - 1, 1])
             buffer.struct_arr[index].r = 0
             buffer.struct_arr[index].g = 0
             buffer.struct_arr[index].b = 0
