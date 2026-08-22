@@ -92,12 +92,14 @@ class shape:
         return self.npoints
 
 class geometry:
+    @staticmethod
     def __circle_point(x, y, r, i, npoints):
         th = 2 * math.pi / npoints * i
         xunit = int(r * math.cos(th) + x)
         yunit = int(r * math.sin(th) + y)
         return xunit, yunit
 
+    @staticmethod
     def circle(x0, y0, r, npoints, rd, gr, bl):
         points = numpy.empty((npoints, 2), dtype='uint16')
         colors = numpy.array([[rd, gr, bl]])
@@ -107,6 +109,7 @@ class geometry:
             points[i, 1] = y
         return shape(points, colors)
 
+    @staticmethod
     def line(x0, y0, x1, y1, npoints, rd, gr, bl):
         if npoints < 2:
             npoints = 2
@@ -121,6 +124,7 @@ class geometry:
             points[i, 4] = bl
         return shape(points)
 
+    @staticmethod
     def triangle(x0, y0, x1, y1, x2, y2, npoints, rd, gr, bl):
         if npoints < 2:
             npoints = 2
@@ -155,6 +159,7 @@ class geometry:
             index += 1
         return shape(points)
 
+    @staticmethod
     def tetragon(x0, y0, x1, y1, x2, y2, x3, y3, npoints, rd, gr, bl):
         if npoints < 2:
             npoints = 2
@@ -198,6 +203,7 @@ class geometry:
             index += 1
         return shape(points)
 
+    @staticmethod
     def rotate_shape(shape1, pivot, angle_deg):
         points = shape1.get_points()
         if DEBUG:
@@ -220,96 +226,89 @@ class geometry:
 
 
 class lumax:
-    global lumax_lib
-    lib_path = './lumax/python/libs/liblumax_%s.so' % (sys.platform)
-    try:
-        lumax_lib = CDLL(lib_path)
-    except:
+    def __init__(self):
+        self.lib_path = './lumax/python/libs/liblumax_%s.so' % (sys.platform)
         try:
-            lumax_lib = CDLL('./lumax/python/libs/liblumax_windows.dll')
+            self.lumax_lib = CDLL(self.lib_path)
         except:
-            lib_path = './libs/liblumax_%s.so' % (sys.platform)
             try:
-                lumax_lib = CDLL(lib_path)
+                self.lumax_lib = CDLL('./lumax/python/libs/liblumax_windows.dll')
             except:
+                self.lib_path = './libs/liblumax_%s.so' % (sys.platform)
                 try:
-                    lumax_lib = CDLL('./libs/liblumax_windows.dll')
+                    self.lumax_lib = CDLL(self.lib_path)
                 except:
-                    print('[ERROR] OS %s not recognized or library not found.' % (sys.platform))
+                    try:
+                        self.lumax_lib = CDLL('./libs/liblumax_windows.dll')
+                    except:
+                        print('[ERROR] OS %s not recognized or library not found.' % (sys.platform))
 
-    c_int_p = POINTER(c_int)
-    
-    lumax_lib.Lumax_GetApiVersion.argtypes = None
-    lumax_lib.Lumax_GetApiVersion.restype = c_float
-    
-    lumax_lib.Lumax_GetPhysicalDevices.argtypes = None
-    lumax_lib.Lumax_GetPhysicalDevices.restype = c_int
-    
-    lumax_lib.Lumax_OpenDevice.argtypes = (c_int, c_int)
-    lumax_lib.Lumax_OpenDevice.restype = c_void_p
-    
-    lumax_lib.Lumax_SetTTL.argtypes = (c_void_p, c_int)
-    lumax_lib.Lumax_SetTTL.restype = c_int
-    
-    lumax_lib.Lumax_WaitForBuffer.argtypes = (c_void_p, c_int, c_int_p, c_int_p)
-    lumax_lib.Lumax_WaitForBuffer.restype = c_int
-    
-    lumax_lib.Lumax_SendFrame.argtypes = (c_void_p, c_point_p, c_int, c_int, c_int, c_int_p)
-    lumax_lib.Lumax_SendFrame.restype = c_int
-    
-    lumax_lib.Lumax_StopFrame.argtypes = (c_void_p,)
-    lumax_lib.Lumax_StopFrame.restype = c_int
-    
-    lumax_lib.Lumax_CloseDevice.argtypes = (c_void_p,)
-    lumax_lib.Lumax_CloseDevice.restype = c_int
+        c_int_p = POINTER(c_int)
 
-    def get_api_version():
-        global lumax_lib
-        return float(lumax_lib.Lumax_GetApiVersion())
+        self.lumax_lib.Lumax_GetApiVersion.argtypes = None
+        self.lumax_lib.Lumax_GetApiVersion.restype = c_float
 
-    def get_physical_devices():
-        global lumax_lib
-        return int(lumax_lib.Lumax_GetPhysicalDevices())
+        self.lumax_lib.Lumax_GetPhysicalDevices.argtypes = None
+        self.lumax_lib.Lumax_GetPhysicalDevices.restype = c_int
 
-    def open_device(numDev, channel):
-        global lumax_lib
+        self.lumax_lib.Lumax_OpenDevice.argtypes = (c_int, c_int)
+        self.lumax_lib.Lumax_OpenDevice.restype = c_void_p
+
+        self.lumax_lib.Lumax_SetTTL.argtypes = (c_void_p, c_int)
+        self.lumax_lib.Lumax_SetTTL.restype = c_int
+
+        self.lumax_lib.Lumax_WaitForBuffer.argtypes = (c_void_p, c_int, c_int_p, c_int_p)
+        self.lumax_lib.Lumax_WaitForBuffer.restype = c_int
+
+        self.lumax_lib.Lumax_SendFrame.argtypes = (c_void_p, c_point_p, c_int, c_int, c_int, c_int_p)
+        self.lumax_lib.Lumax_SendFrame.restype = c_int
+
+        self.lumax_lib.Lumax_StopFrame.argtypes = (c_void_p,)
+        self.lumax_lib.Lumax_StopFrame.restype = c_int
+
+        self.lumax_lib.Lumax_CloseDevice.argtypes = (c_void_p,)
+        self.lumax_lib.Lumax_CloseDevice.restype = c_int
+
+    def get_api_version(self):
+        return float(self.lumax_lib.Lumax_GetApiVersion())
+
+    def get_physical_devices(self):
+        return int(self.lumax_lib.Lumax_GetPhysicalDevices())
+
+    def open_device(self, numDev, channel):
         try:
-            return int(lumax_lib.Lumax_OpenDevice(c_int(numDev), c_int(channel)))
+            return int(self.lumax_lib.Lumax_OpenDevice(c_int(numDev), c_int(channel)))
         except:
             return 0
 
-    def setTTL(handle, ttl):
-        global lumax_lib
-        return int(lumax_lib.Lumax_SetTTL(c_void_p(handle), c_int(ttl)))
+    def setTTL(self, handle, ttl):
+        return int(self.lumax_lib.Lumax_SetTTL(c_void_p(handle), c_int(ttl)))
 
-    def wait_for_buffer(handle, timeOut):
-        global lumax_lib
+    def wait_for_buffer(self, handle, timeOut):
         timeToWait = c_int(0)
         bufferChanged = c_int(0)
-        ret = lumax_lib.Lumax_WaitForBuffer(c_void_p(handle), c_int(timeOut), byref(timeToWait), byref(bufferChanged))
+        ret = self.lumax_lib.Lumax_WaitForBuffer(c_void_p(handle), c_int(timeOut), byref(timeToWait), byref(bufferChanged))
         return int(ret), int.from_bytes(timeToWait, byteorder='big', signed=True), int.from_bytes(bufferChanged, byteorder='big', signed=True)
 
-    def send_frame(handle, points, scanSpeed, updateMode):
-        global lumax_lib
+    def send_frame(self, handle, points, scanSpeed, updateMode):
         numOfPoints = points.length
         timeToWait = c_int(0)
-        ret = lumax_lib.Lumax_SendFrame(c_void_p(handle), points.struct_arr, c_int(numOfPoints), c_int(scanSpeed), c_int(updateMode), byref(timeToWait))
+        ret = self.lumax_lib.Lumax_SendFrame(c_void_p(handle), points.struct_arr, c_int(numOfPoints), c_int(scanSpeed), c_int(updateMode), byref(timeToWait))
         return int(ret), int.from_bytes(timeToWait, byteorder='big', signed=True)
 
-    def stop_frame(handle):
-        global lumax_lib
-        return int(lumax_lib.Lumax_StopFrame(c_void_p(handle)))
+    def stop_frame(self, handle):
+        return int(self.lumax_lib.Lumax_StopFrame(c_void_p(handle)))
 
-    def close_device(handle):
-        global lumax_lib
-        return int(lumax_lib.Lumax_CloseDevice(c_void_p(handle)))
+    def close_device(self, handle):
+        return int(self.lumax_lib.Lumax_CloseDevice(c_void_p(handle)))
 
 class lumax_renderer:
     def __init__(self):
-        ret = lumax.get_api_version()
-        ret1 = lumax.get_physical_devices()
-        self.lhandle = lumax.open_device(1, 0)
-        ret2, timeToWait, bufferChanged = lumax.wait_for_buffer(self.lhandle, 17)
+        self.lmx = lumax()
+        ret = self.lmx.get_api_version()
+        ret1 = self.lmx.get_physical_devices()
+        self.lhandle = self.lmx.open_device(1, 0)
+        ret2, timeToWait, bufferChanged = self.lmx.wait_for_buffer(self.lhandle, 17)
         if DEBUG:
             print("[DEBUG] API version: {}".format(ret))
             print("[DEBUG] Number of physical devices: {}".format(ret1))
@@ -318,6 +317,9 @@ class lumax_renderer:
             print("[DEBUG] WaitForBuffer return: {}, {}, {}".format(ret2, timeToWait, bufferChanged))
         self.shapes = numpy.array([])
         self.totnpoints = 0
+        self.mirrorx = 1
+        self.mirrory = 1
+        
 
     def new_frame(self):
         self.shapes = numpy.array([])
@@ -343,10 +345,6 @@ class lumax_renderer:
 
 
     def __generate_buffer(self):
-        # TODO: von außerhalb setzen!
-        mirrorx = 1
-        mirrory = 1
-
         # two extra points for every shape + one extra point in the center of the frame
         nextrapoints = 2 * len(self.shapes) + 1
         buffer = _lpoints(self.totnpoints + nextrapoints)
@@ -362,8 +360,8 @@ class lumax_renderer:
             p = self.shapes[i].get_points()
             # insert blank point at the beginning
             index += 1
-            buffer.struct_arr[index].x = (255 * 255 * mirrorx) + (-1)**(mirrorx) * numpy.int32(p[0, 0])
-            buffer.struct_arr[index].y = (255 * 255 * mirrory) + (-1)**(mirrory) * numpy.int32(p[0, 1])
+            buffer.struct_arr[index].x = (255 * 255 * self.mirrorx) + (-1)**(self.mirrorx) * numpy.int32(p[0, 0])
+            buffer.struct_arr[index].y = (255 * 255 * self.mirrory) + (-1)**(self.mirrory) * numpy.int32(p[0, 1])
             buffer.struct_arr[index].r = 0
             buffer.struct_arr[index].g = 0
             buffer.struct_arr[index].b = 0
@@ -371,16 +369,16 @@ class lumax_renderer:
             # copy the points
             for j in range(0, len(p)):
                 index += 1
-                buffer.struct_arr[index].x = (255 * 255 * mirrorx) + (-1)**(mirrorx) * numpy.int32(p[j, 0])
-                buffer.struct_arr[index].y = (255 * 255 * mirrory) + (-1)**(mirrory) * numpy.int32(p[j, 1])
+                buffer.struct_arr[index].x = (255 * 255 * self.mirrorx) + (-1)**(self.mirrorx) * numpy.int32(p[j, 0])
+                buffer.struct_arr[index].y = (255 * 255 * self.mirrory) + (-1)**(self.mirrory) * numpy.int32(p[j, 1])
                 buffer.struct_arr[index].r = p[j, 2]
                 buffer.struct_arr[index].g = p[j, 3]
                 buffer.struct_arr[index].b = p[j, 4]
 
             # insert blank point at the end
             index += 1
-            buffer.struct_arr[index].x = (255 * 255 * mirrorx) + (-1)**(mirrorx) * numpy.int32(p[len(p) - 1, 0])
-            buffer.struct_arr[index].y = (255 * 255 * mirrory) + (-1)**(mirrory) * numpy.int32(p[len(p) - 1, 1])
+            buffer.struct_arr[index].x = (255 * 255 * self.mirrorx) + (-1)**(self.mirrorx) * numpy.int32(p[len(p) - 1, 0])
+            buffer.struct_arr[index].y = (255 * 255 * self.mirrory) + (-1)**(self.mirrory) * numpy.int32(p[len(p) - 1, 1])
             buffer.struct_arr[index].r = 0
             buffer.struct_arr[index].g = 0
             buffer.struct_arr[index].b = 0
@@ -394,24 +392,25 @@ class lumax_renderer:
         buffer = lumax_renderer.__generate_buffer(self)
 
         # print the points
-        #for i in range(0, buffer.length):
-        #    print("p{} = {}, {}, {}, {}, {}".format(i, buffer.struct_arr[i].x, buffer.struct_arr[i].y, buffer.struct_arr[i].r, buffer.struct_arr[i].g, buffer.struct_arr[i].b))
+        if DEBUG:
+            for i in range(0, buffer.length):
+                print("p{} = {}, {}, {}, {}, {}".format(i, buffer.struct_arr[i].x, buffer.struct_arr[i].y, buffer.struct_arr[i].r, buffer.struct_arr[i].g, buffer.struct_arr[i].b))
 
-        ret, timeToWait = lumax.send_frame(self.lhandle, buffer, pointrate, 0)
+        ret, timeToWait = self.lmx.send_frame(self.lhandle, buffer, pointrate, 0)
         if DEBUG:
             print("[DEBUG] SendFrame return: {}, {}".format(ret, timeToWait))
-        ret, timeToWait, bufferChanged = lumax.wait_for_buffer(self.lhandle, 17)
+        ret, timeToWait, bufferChanged = self.lmx.wait_for_buffer(self.lhandle, 17)
         return
 
     def stop_frame(self):
-        ret = lumax.stop_frame(self.lhandle)
+        ret = self.lmx.stop_frame(self.lhandle)
         if DEBUG:
             print("[DEBUG] StopFrame return: {}".format(ret))
         return
 
     def close_device(self):
-        ret = lumax.stop_frame(self.lhandle)
-        ret1 = lumax.close_device(self.lhandle)
+        ret = self.lmx.stop_frame(self.lhandle)
+        ret1 = self.lmx.close_device(self.lhandle)
         if DEBUG:
             print("[DEBUG] StopFrame return: {}".format(ret))
             print("[DEBUG] CloseDevice return: {}".format(ret1))
