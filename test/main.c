@@ -45,7 +45,7 @@ int main(int argc, char *argv[]) {
             while(1) {
                 f = (f + 1) % numberOfFrames;
                 const int numOfPoints = 1;
-                TLumax_Point Points[numOfPoints];
+                TLumax_Point Points[1];
                 const int mid = 32768;
                 for (int i = 0; i < numOfPoints; i++) {
                     Points[i].Ch1 = mid + (f + 50) * 40 * sin((float)2 * M_PI * i / numOfPoints); // x

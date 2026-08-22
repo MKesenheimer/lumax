@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdint.h>
+
 // Punktinformationen
 // Es handelt sich um vorzeichenlose 16-Bit-Werte
 // Ch1=X, Ch2=Y:                    0=links/unten, 32768=mitte, 65535=rechts/oben
@@ -81,9 +83,12 @@ int Lumax_SendFrame(void *handle, TLumax_Point *points, int numOfPoints, int sca
 int Lumax_StopFrame(void* handle);
 
 // Notiz: Wird nur für die "Bare"-Lumax aufgerufen
-// Und auch dann hat der Aufruf keine Auswirkung auf den weiteren 
+// Und auch dann hat der Aufruf keine Auswirkung auf den weiteren
 // Programmablauf
-int Lumax_DongleCom();
+// Hinweis: Die originale API hatte hier keine Parameter; die Parameter wurden
+// bei der Reimplementierung ergänzt, da der interne Dongle-Austausch das
+// Geräte-Handle benötigt.
+int Lumax_DongleCom(void* handle, int flag, int address, int writeVar, int *readVar);
 
 // Aktiviert bzw. deaktiviert den DMX512 Sender bzw. Empfänger auf der Minilumax-Karte. 
 // Es ist zu beachten, dass ein aktiver Sender/Empfänger Rechenleistung auf der Ausgabekarte 

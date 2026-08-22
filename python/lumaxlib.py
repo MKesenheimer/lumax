@@ -43,23 +43,30 @@ class _lpoints(Structure):
             self.struct_arr[num].b = 0
 
 class shape:
-    def __init__(self):
-        """ empty constructor """
-        self.points = numpy.empty((0, 5), dtype='uint16')
-        self.npoints = 0
+    def __init__(self, points=None, color=None):
+        """
+        constructor.
+        empty:            shape()
+        colored points:   shape(points)        points: (npoints, 5) array (x, y, r, g, b)
+        coords + color:   shape(points, color) points: (npoints, 2), color: (npoints, 3) or (1, 3)
+        """
+        if points is None:
+            self.points = numpy.empty((0, 5), dtype='uint16')
+            self.npoints = 0
+            return
 
-    def __init__(self, points, color = None):
-        """ constructor with array of colored points. Dimension = (npoints, 5) """
-        if type(color) == type(None):
+        if color is None:
             self.points = points
             self.npoints = len(points)
             return
 
-        """ Alternative:
-            define a shape by numpy arrays for coordinates and color.
-            points: for example: numpy.array([[0, 1], [2, 3], [4, 5]]) 
-            color: for example: numpy.array([[128, 255, 128], [255, 255, 128], [128, 255, 255]]) 
-            note: points and color must be equal in size, or color must be of size 1 (one color for all points) """
+        """
+        Alternative:
+        define a shape by numpy arrays for coordinates and color.
+        points: for example: numpy.array([[0, 1], [2, 3], [4, 5]]) 
+        color: for example: numpy.array([[128, 255, 128], [255, 255, 128], [128, 255, 255]]) 
+        note: points and color must be equal in size, or color must be of size 1 (one color for all points)
+        """
         plength = len(points)
         clength = len(color)
         if plength == 0 or clength == 0:
@@ -233,7 +240,7 @@ class lumax:
     c_int_p = POINTER(c_int)
     
     lumax_lib.Lumax_GetApiVersion.argtypes = None
-    lumax_lib.Lumax_GetApiVersion.restype = c_int
+    lumax_lib.Lumax_GetApiVersion.restype = c_float
     
     lumax_lib.Lumax_GetPhysicalDevices.argtypes = None
     lumax_lib.Lumax_GetPhysicalDevices.restype = c_int
@@ -258,7 +265,7 @@ class lumax:
 
     def get_api_version():
         global lumax_lib
-        return int(lumax_lib.Lumax_GetApiVersion())
+        return float(lumax_lib.Lumax_GetApiVersion())
 
     def get_physical_devices():
         global lumax_lib
