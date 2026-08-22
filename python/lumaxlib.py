@@ -219,14 +219,14 @@ class lumax:
         lumax_lib = CDLL(lib_path)
     except:
         try:
-            lumax_lib = CDLL('./lumax/python/libs/lumax.dll')
+            lumax_lib = CDLL('./lumax/python/libs/liblumax_windows.dll')
         except:
             lib_path = './libs/liblumax_%s.so' % (sys.platform)
             try:
                 lumax_lib = CDLL(lib_path)
             except:
                 try:
-                    lumax_lib = CDLL('./libs/lumax.dll')
+                    lumax_lib = CDLL('./libs/liblumax_windows.dll')
                 except:
                     print('[ERROR] OS %s not recognized or library not found.' % (sys.platform))
 

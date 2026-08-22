@@ -24,7 +24,7 @@
 int main(int argc, char *argv[]) {
     //lumax_verbosity = DBG_WRITETODEV | DBG_READMEMORY | DBG_OPENDEVICE;
 
-    int result;
+    int result = 0;
     int NumOfCards = Lumax_GetPhysicalDevices();
     printf("Number of MiniLumax devices: %i\n", NumOfCards);
     if (NumOfCards > 0) {
