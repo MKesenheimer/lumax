@@ -5,6 +5,7 @@
 # Targets:
 #   make            build the library into libs/ and refresh the test/ and python/ copies
 #   make lib        build the shared library only
+#   make check      build and run the protocol unit tests (no device required)
 #   make test       build everything, then build and run the C test program (device required)
 #   make udev       (Linux only) install the udev rules so userspace can claim the FTDI device
 #   make clean      remove all build artifacts
@@ -51,30 +52,51 @@ LIBFTDI_LDFLAGS ?= -L/usr/lib -L/mingw64/lib
 LIBS := libs/liblumax_windows.dll
 endif
 
-.PHONY: all lib dist test udev clean
+ifeq ($(PLATFORM),windows)
+CHECK_BIN := test/test_protocol.exe
+else
+CHECK_BIN := test/test_protocol
+endif
+
+.PHONY: all lib dist check test udev clean libs
 
 all: lib dist
 
 lib: $(LIBS)
 
-liblumax.o: liblumax.c lumax.h liblumax.h
+# lumax_protocol.o has no ftdi dependency (pure protocol logic, unit-testable)
+lumax_protocol.o: lumax_protocol.c lumax_protocol.h lumax.h
+	$(CC) $(CFLAGS) -c $< -o $@
+
+liblumax.o: liblumax.c lumax.h liblumax.h lumax_protocol.h
 	$(CC) $(CFLAGS) $(LIBFTDI_CFLAGS) -c $< -o $@
+
+OBJS := liblumax.o lumax_protocol.o
+
+# libs/ is not tracked in git; create it on demand.
+libs:
+	@mkdir -p libs
 
 # macOS: C consumers link the .so, ctypes loads the .dylib; build both and
 # point the install names at @rpath so consumers can find them via rpath.
-libs/liblumax_darwin.so: liblumax.o
-	$(CC) -shared $(LIBFTDI_LDFLAGS) -lftdi1 $< -o $@
+libs/liblumax_darwin.so: $(OBJS) | libs
+	$(CC) -shared $(LIBFTDI_LDFLAGS) -lftdi1 $^ -o $@
 	install_name_tool -id @rpath/liblumax_darwin.so $@
 
-libs/liblumax_darwin.dylib: liblumax.o
-	$(CC) -dynamiclib $(LIBFTDI_LDFLAGS) -lftdi1 $< -o $@
+libs/liblumax_darwin.dylib: $(OBJS) | libs
+	$(CC) -dynamiclib $(LIBFTDI_LDFLAGS) -lftdi1 $^ -o $@
 	install_name_tool -id @rpath/liblumax_darwin.dylib $@
 
-libs/liblumax_linux.so: liblumax.o
-	$(CC) -shared $(LIBFTDI_LDFLAGS) -lftdi1 $< -o $@
+libs/liblumax_linux.so: $(OBJS) | libs
+	$(CC) -shared $(LIBFTDI_LDFLAGS) -lftdi1 $^ -o $@
 
-libs/liblumax_windows.dll: liblumax.o
-	$(CC) -shared $(LIBFTDI_LDFLAGS) -lftdi1 $< -o $@
+libs/liblumax_windows.dll: $(OBJS) | libs
+	$(CC) -shared $(LIBFTDI_LDFLAGS) -lftdi1 $^ -o $@
+
+# protocol unit tests: lumax_protocol.c has no ftdi dependency
+check:
+	$(CC) $(CFLAGS) -I. test/test_protocol.c lumax_protocol.c -o $(CHECK_BIN)
+	./$(CHECK_BIN)
 
 # keep the C test program and the Python bindings in sync with the fresh build
 dist: lib
@@ -96,7 +118,8 @@ else
 endif
 
 clean:
-	rm -f liblumax.o
+	rm -f liblumax.o lumax_protocol.o
+	rm -f $(CHECK_BIN)
 	rm -f libs/liblumax_*
 	rm -f test/main_darwin test/main_linux test/main.exe
 	rm -f test/lumax.h

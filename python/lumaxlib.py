@@ -302,6 +302,13 @@ class lumax:
     def close_device(self, handle):
         return int(self.lumax_lib.Lumax_CloseDevice(c_void_p(handle)))
 
+    def set_logfile(self, path):
+        """Enable byte-level protocol capture (hex dump) to the given file.
+        Pass an empty string to disable it (the default)."""
+        self.lumax_lib.Lumax_SetLogFile.argtypes = [c_char_p]
+        self.lumax_lib.Lumax_SetLogFile.restype = None
+        self.lumax_lib.Lumax_SetLogFile((path or "").encode())
+
 class lumax_renderer:
     def __init__(self):
         self.lmx = lumax()

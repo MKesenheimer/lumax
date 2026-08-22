@@ -27,6 +27,12 @@ typedef struct
 // Liefert die Versionsnummer der DLL zurück.
 float Lumax_GetApiVersion();
 
+// DEBUG (Reimplementierung): aktiviert die Byte-Erfassung des Protokolls.
+// path: Datei, in die jeder Datenaustausch mit dem Gerät als Hex-Dump
+//       angehängt wird (eine Zeile pro Übertragung); ein leerer oder
+//        NULL-Pfad deaktiviert die Erfassung.
+void Lumax_SetLogFile(const char *path);
+
 // Liefert Informationen zum angeschlossenen Gerät.
 // Für die Abfrage der Information muss die Karte nicht unbedingt zuvor mit Lumax_OpenDevice
 // geöffnet worden sein, es schadet aber auch nicht, sollte sie bereits geöffnet sein.
@@ -119,23 +125,28 @@ int Lumax_SetDmxMode(void *handle, uint8_t a2, uint8_t a3);
 //          das Gerät nicht geöffnet werden konnte, so wird 0 zurückgegeben.
 void* Lumax_OpenDevice(int numDev, int channel);
 
-// DEBUG Flags
+// DEBUG Flags (defined in liblumax.c)
 #define DEBUG_POSSIBLE
-const uint32_t DBG_FATAL = 1;
-const uint32_t DBG_ERROR = 2;
-const uint32_t DBG_WARN = 4;
-const uint32_t DBG_INFO = 8;
-const uint32_t DBG_GENERAL = 16;
-const uint32_t DBG_WRITETODEV = 32;
-const uint32_t DBG_READFROMDEV = 64;
-const uint32_t DBG_WRITEFRAMEBUFFER = 128;
-const uint32_t DBG_READID = 256;
-const uint32_t DBG_READMEMORY = 512;
-const uint32_t DBG_WAITFORBUFFER = 1024;
-const uint32_t DBG_SENDFRAME = 2048;
-const uint32_t DBG_SETDMXMODE = 4096;
-const uint32_t DBG_OPENDEVICE = 8192;
-const uint32_t DBG_CHECKIFBUSY = 16384;
-const uint32_t DBG_ISOPEN = 32768;
-const uint32_t DBG_ALL = 65536;
+extern const uint32_t DBG_FATAL;
+extern const uint32_t DBG_ERROR;
+extern const uint32_t DBG_WARN;
+extern const uint32_t DBG_INFO;
+extern const uint32_t DBG_GENERAL;
+extern const uint32_t DBG_WRITETODEV;
+extern const uint32_t DBG_READFROMDEV;
+extern const uint32_t DBG_WRITEFRAMEBUFFER;
+extern const uint32_t DBG_READID;
+extern const uint32_t DBG_READMEMORY;
+extern const uint32_t DBG_WAITFORBUFFER;
+extern const uint32_t DBG_SENDFRAME;
+extern const uint32_t DBG_SETDMXMODE;
+extern const uint32_t DBG_OPENDEVICE;
+extern const uint32_t DBG_CHECKIFBUSY;
+extern const uint32_t DBG_ISOPEN;
+extern const uint32_t DBG_ALL;
 extern uint32_t lumax_verbosity;
+
+// Byte-level protocol capture (see PROTOCOL.md): when this names a file,
+// every transfer to/from the device is appended to it as a hex dump.
+// An empty string disables logging (the default).
+extern char lumax_logfile[256];

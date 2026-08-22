@@ -14,6 +14,7 @@
 
 #include "lumax.h"
 #include "liblumax.h"
+#include "lumax_protocol.h"
 
 
 // Falls die Ausgabekarte nicht angesprochen wird, sollten zuerst folgende Punkte überprüft werden:
@@ -28,8 +29,11 @@ const int MinScanSpeed = 250;
 const int MaxScanSpeed = 70000; // flags[51]
 // Danach richtet sich die Anzahl der Farbkanäle der Lumax
 const int Flavor = 1; // flags[49], LaserWorld Lumax = 1, Bare-Lumax = 4
-const uint8_t BytesPerFrame = 7; // flags[34], wie viele Bytes können mit einem Sendevorgang gesendert werden
 const uint32_t ClockSpeed = 16000000; // flags[324144]
+
+// größte Frame-Chunk-Größe in Byte: 9 Byte/Punkt (Flavor 16, RGB + Cyan +
+// DeepBlue + Yellow) * 4500 Punkte (MaxPoints) pro Chunk
+#define MaxFrameBytes (9 * 4500)
 
 // vid / pid
 const uint32_t vid = 0x403;
@@ -53,7 +57,24 @@ uint32_t NumberOfPoints = 0; // flags[47]
 uint32_t IsBusy = 0; // flags[30], pos = 1432
 uint32_t BusyTime; // flags[37], pos = 1460
 
-// DEBUG Flags
+// DEBUG Flags (declared in lumax.h)
+const uint32_t DBG_FATAL = 1;
+const uint32_t DBG_ERROR = 2;
+const uint32_t DBG_WARN = 4;
+const uint32_t DBG_INFO = 8;
+const uint32_t DBG_GENERAL = 16;
+const uint32_t DBG_WRITETODEV = 32;
+const uint32_t DBG_READFROMDEV = 64;
+const uint32_t DBG_WRITEFRAMEBUFFER = 128;
+const uint32_t DBG_READID = 256;
+const uint32_t DBG_READMEMORY = 512;
+const uint32_t DBG_WAITFORBUFFER = 1024;
+const uint32_t DBG_SENDFRAME = 2048;
+const uint32_t DBG_SETDMXMODE = 4096;
+const uint32_t DBG_OPENDEVICE = 8192;
+const uint32_t DBG_CHECKIFBUSY = 16384;
+const uint32_t DBG_ISOPEN = 32768;
+const uint32_t DBG_ALL = 65536;
 uint32_t lumax_verbosity = 0; //DBG_ALL;
 
 // Done
@@ -64,6 +85,30 @@ uint32_t timeGetTime() {
     return _t.tv_sec*1000 + lround(_t.tv_nsec/1.0e6);
 }
 #endif
+
+// Byte-level protocol capture.
+// When lumax_logfile names a file, every transfer to/from the device is
+// appended to it as a hex dump, one line per transfer:
+//     <millis> <TX|RX> <count>: <hex byte> <hex byte> ...
+// The file is opened lazily on first use; clearing the name disables logging.
+char lumax_logfile[256] = "";
+static FILE *logHandle = NULL;
+
+static void logBytes(const char *dir, const uint8_t *data, uint32_t len) {
+    if (lumax_logfile[0] == '\0') {
+        if (logHandle) { fclose(logHandle); logHandle = NULL; }
+        return;
+    }
+    if (!logHandle)
+        logHandle = fopen(lumax_logfile, "a");
+    if (!logHandle)
+        return;
+    fprintf(logHandle, "%u %s %u:", (unsigned)timeGetTime(), dir, (unsigned)len);
+    for (uint32_t i = 0; i < len; ++i)
+        fprintf(logHandle, " %02x", data[i]);
+    fputc('\n', logHandle);
+    fflush(logHandle);
+}
 
 // Done
 int openDev(int numDev, void **handle) {
@@ -169,7 +214,8 @@ int writeToDev(void *handle, uint8_t *buffer, uint32_t bytesToWrite) {
         checkIfBusy(handle, ftStatus);
         return 1;
     }
-    
+
+    logBytes("TX", buffer, bytesToWrite);
     return 0;
 }
 
@@ -196,6 +242,9 @@ int readFromDev(void *handle, uint8_t *buffer, uint32_t bytesToRead) {
     if (bytesToRead != received)
         return 1;
 
+    if (received)
+        logBytes("RX", buffer, received);
+
     return 0;
 }
 
@@ -217,7 +266,7 @@ int writeFrameBuffer(void *handle, uint8_t *frameBuffer, uint16_t frameBufferSiz
     writeb[3] = numberOfBytes;
     writeb[4] = numberOfBytes / 256;
     writeb[5] = counter;
-    writeb[6] = writeb[5] ^ writeb[4] ^ writeb[3] ^ writeb[2] ^ writeb[1] ^ writeb[0];
+    writeb[6] = lumax_checksum(writeb, 6);
     
     if (writeToDev(handle, writeb, 7) || writeToDev(handle, frameBuffer, numberOfBytes)) {
 #ifdef DEBUG_POSSIBLE
@@ -290,11 +339,7 @@ int readID(void *handle, uint8_t *arr, uint16_t size) {
     }
 
     // calculate checksum
-    uint8_t check = 0;
-    for (int i = 0; i < size; ++i) {
-        check ^= arr[i];
-    }
-    if (lastByte != check) {
+    if (lastByte != lumax_checksum(arr, size)) {
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
             fprintf(stderr, "[ERROR] readID: checksum invalid.\n");
@@ -330,7 +375,7 @@ int readMemory(void *handle, uint8_t *arr, uint16_t start, uint16_t end) {
     writeb[3] = end;
     writeb[4] = end / 256;
     writeb[5] = 0;
-    writeb[6] = writeb[4] ^ writeb[3] ^ writeb[2] ^ writeb[1] ^ writeb[0];
+    writeb[6] = lumax_checksum(writeb, 6);
     uint8_t readb[522];
 
     if (writeToDev(handle, writeb, 7) || readFromDev(handle, readb, end + 2)) {
@@ -341,13 +386,9 @@ int readMemory(void *handle, uint8_t *arr, uint16_t start, uint16_t end) {
         return 1;
     }
     
-    uint8_t check = 0;
-    for (int i = 0; i < end; ++i) {
+    for (int i = 0; i < end; ++i)
         arr[i] = readb[i + 1];
-        //printf("[DEBUG] readMemory: arr[%d] = %c\n", i, arr[i]); // LXPVB77T
-        check ^= arr[i];
-    }
-    if (readb[0] != writeb[6] || readb[end + 1] != check) {
+    if (readb[0] != writeb[6] || readb[end + 1] != lumax_checksum(arr, end)) {
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_WRITEFRAMEBUFFER || lumax_verbosity & DBG_ALL)
             fprintf(stderr, "[ERROR] readMemory: checksum failed.\n");
@@ -371,22 +412,15 @@ int dongleCom(void *handle, uint8_t flag, uint32_t address, uint8_t *writeBuffer
     writeb[3] = address >> 16;
     writeb[4] = address >> 24;
     writeb[5] = flag;
-    writeb[6] = writeb[5] ^ writeb[4] ^ writeb[3] ^ writeb[2] ^ writeb[1] ^ writeb[0];
-    int j = 7;
-    uint8_t check = 0;
-    for (int i = 0; i < 16; ++i) {
-        writeb[j++] = writeBuffer[i];
-        check ^= writeBuffer[i];
-    }
-    writeb[23] = check;
+    writeb[6] = lumax_checksum(writeb, 6);
+    for (int i = 0; i < 16; ++i)
+        writeb[7 + i] = writeBuffer[i];
+    writeb[23] = lumax_checksum(writeb + 7, 16);
     if (!writeToDev(handle, writeb, 24)
         && !readFromDev(handle, readb, 1) // TODO: war in IDA readFromDev(handle, readb, 1, 0)
         && readb[0] == writeb[6]
         && !readFromDev(handle, readb, 14)) {
-        check = 0;
-        for (int i = 0; i < 13; ++i)
-            check ^= readb[i];
-        if (readb[13] == check) {
+        if (readb[13] == lumax_checksum(readb, 13)) {
             for (int i = 0; i < 13; ++i)
                 readBuffer[i] = readb[i];
             result = 0;
@@ -397,6 +431,16 @@ int dongleCom(void *handle, uint8_t flag, uint32_t address, uint8_t *writeBuffer
 
 // Done
 float Lumax_GetApiVersion() { return 0.9; }
+
+// DEBUG: enables byte-level protocol capture (see PROTOCOL.md).
+// path:  file to which a hex dump of every transfer is appended;
+//        an empty or NULL path disables logging.
+void Lumax_SetLogFile(const char *path) {
+    if (path && path[0])
+        snprintf(lumax_logfile, sizeof(lumax_logfile), "%s", path);
+    else
+        lumax_logfile[0] = '\0';
+}
 
 // TODO
 int Lumax_GetDeviceInfo(int physicalDevice, int infoID, uint8_t *inBuffer, uint16_t inLength, uint8_t *outBuffer, uint16_t outLength) { return 0; }
@@ -504,7 +548,7 @@ int Lumax_SetTTL(void *handle, uint8_t TTL) {
     buffer[3] = 0;
     buffer[4] = 0;
     buffer[5] = 0;
-    buffer[6] = buffer[1] ^ buffer[0];
+    buffer[6] = lumax_checksum(buffer, 6);
     uint8_t lastByte;
     if (writeToDev(handle, buffer, 7) || readFromDev(handle, &lastByte, 1u) || lastByte != buffer[6])
         return 1;
@@ -541,8 +585,8 @@ int Lumax_CloseDevice(void* handle) {
 // Done
 int Lumax_SendFrame(void *handle, TLumax_Point *points, int numOfPoints, int scanSpeed, int updateMode, int *timeToWait) {
     // variables
-    // worst case is 8 bytes per point (Flavor 8/16), MaxPoints (4500) per chunk
-    uint8_t writeb[36000];
+    // worst case is 9 bytes per point (Flavor 16), MaxPoints (4500) per chunk
+    uint8_t writeb[MaxFrameBytes];
     TLumax_Point point;
     TLumax_Point *lpoints;
     lpoints = points;
@@ -605,112 +649,23 @@ int Lumax_SendFrame(void *handle, TLumax_Point *points, int numOfPoints, int sca
     }
 #endif
 
+    // TTL mode for Flavor 1, see lumax_pack_point():
+    //   1 = per-point TTL, 2 = global TTL (TTLBuffer, set via Lumax_SetTTL).
+    // The original driver always sends 7-byte points for Flavor 1.
+    uint32_t ttlMode = (Flavor == 1 && (TTLAvailable & 2u)) ? 2 : 1;
+
     // big loop to fill the buffer
     int readOK;
     int npoint = 0;
     for (int i = 0; i < maxLoops; ++i) {
-        int pointsPerLoop;
-        if (i != 0)
-            pointsPerLoop = MaxPoints;
-        else
-            pointsPerLoop = residual;
+        // The first chunk carries the residual points. If there is no residual,
+        // all chunks are full (an empty first chunk would be rejected).
+        int pointsPerLoop = (i == 0 && residual != 0) ? residual : MaxPoints;
         int k = 0;
-        if (Flavor == 2) {
-            for (int j = 0; j < pointsPerLoop; ++j) {
-                uint16_t l0 = lpoints[npoint].Ch1 >> 4;
-                uint16_t l1 = lpoints[npoint].Ch2 >> 4;
-                writeb[k++] = l0 / 256 + 16 * (l1 / 256);
-                writeb[k++] = l0;
-                writeb[k++] = l1;
-                writeb[k++] = lpoints[npoint].Ch3 >> 8;
-                writeb[k++] = lpoints[npoint].Ch4 >> 8;
-                writeb[k++] = lpoints[npoint++].Ch5 >> 8;
-            }
-        }
-        if (Flavor == 4) {
-            for (int j = 0; j < pointsPerLoop; ++j) {
-                uint16_t l0 = lpoints[npoint].Ch1 >> 4;
-                uint16_t l1 = lpoints[npoint].Ch2 >> 4;
-                //if ((l1 & ))
-                writeb[k++] = l0 / 256 + 16 * (l1 / 256);
-                writeb[k++] = l0;
-                writeb[k++] = l1;
-                writeb[k++] = lpoints[npoint].Ch3 >> 8;
-                writeb[k++] = lpoints[npoint].Ch4 >> 8;
-                writeb[k++] = lpoints[npoint].Ch5 >> 8;
-                writeb[k++] = lpoints[npoint++].Ch8 >> 8;
-            }
-        }
-        if (Flavor == 8) {
-            for (int j = 0; j < pointsPerLoop; ++j) {
-                uint8_t l0 = lpoints[npoint].Ch1 >> 4;
-                uint8_t l1 = lpoints[npoint].Ch2 >> 4;
-                writeb[k++] = l0 / 256 + 16 * (l1 / 256);
-                writeb[k++] = l0;
-                writeb[k++] = l1;
-                writeb[k++] = lpoints[npoint].Ch3 >> 8;
-                writeb[k++] = lpoints[npoint].Ch4 >> 8;
-                writeb[k++] = lpoints[npoint].Ch5 >> 8;
-                writeb[k++] = lpoints[npoint].Ch8 >> 8;
-                writeb[k++] = lpoints[npoint++].Ch6 >> 8;
-            }
-        }
-        if (Flavor == 16) {
-            for (int j = 0; j < pointsPerLoop; ++j) {
-                uint16_t l0 = lpoints[npoint].Ch1 >> 4;
-                uint16_t l1 = lpoints[npoint].Ch2 >> 4;
-                writeb[k++] = l0 / 256 + 16 * (l1 / 256);
-                writeb[k++] = l0;
-                writeb[k++] = l1;
-                writeb[k++] = lpoints[npoint].Ch3 >> 8;
-                writeb[k++] = lpoints[npoint].Ch4 >> 8;
-                writeb[k++] = lpoints[npoint].Ch5 >> 8;
-                writeb[k++] = lpoints[npoint].Ch8 >> 8;
-                writeb[k++] = lpoints[npoint].Ch6 >> 8;
-                writeb[k++] = lpoints[npoint++].Ch7 >> 8;
-            }
-        }
-        if (Flavor == 1) {
-            if (TTLAvailable & 1) {
-                for (int j = 0; j < pointsPerLoop; ++j) {
-                    uint16_t l0 = lpoints[npoint].Ch1 >> 4;
-                    uint16_t l1 = lpoints[npoint].Ch2 >> 4;
-                    writeb[k++] = l0 / 256 + 16 * (l1 / 256);
-                    writeb[k++] = l0;
-                    writeb[k++] = l1;
-                    writeb[k++] = lpoints[npoint].Ch3 >> 8;
-                    writeb[k++] = lpoints[npoint].Ch4 >> 8;
-                    writeb[k++] = lpoints[npoint++].Ch5 >> 8;
-                }
-            } else if (TTLAvailable & 2) {
-                for (int j = 0; j < pointsPerLoop; ++j) {
-                    uint16_t l0 = lpoints[npoint].Ch1 >> 4;
-                    uint16_t l1 = lpoints[npoint].Ch2 >> 4;
-                    writeb[k++] = l0 / 256 + 16 * (l1 / 256);
-                    writeb[k++] = l0;
-                    writeb[k++] = l1;
-                    writeb[k++] = lpoints[npoint].Ch3 >> 8;
-                    writeb[k++] = lpoints[npoint].Ch4 >> 8;
-                    writeb[k++] = lpoints[npoint].Ch5 >> 8;
-                    writeb[k++] = TTLBuffer;
-                    ++npoint;
-                }
-            } else {
-                for (int j = 0; j < pointsPerLoop; ++j) {
-                    uint16_t l0 = lpoints[npoint].Ch1 >> 4;
-                    uint16_t l1 = lpoints[npoint].Ch2 >> 4;
-                    writeb[k++] = l0 / 256 + 16 * (l1 / 256);
-                    writeb[k++] = l0;
-                    writeb[k++] = l1;
-                    writeb[k++] = lpoints[npoint].Ch3 >> 8;
-                    writeb[k++] = lpoints[npoint].Ch4 >> 8;
-                    writeb[k++] = lpoints[npoint].Ch5 >> 8;
-                    writeb[k++] = lpoints[npoint++].TTL;
-                }
-            }
-        }
+        for (int j = 0; j < pointsPerLoop; ++j)
+            k += (int)lumax_pack_point(Flavor, ttlMode, &lpoints[npoint++], TTLBuffer, writeb + k);
         // write to Device
-        readOK = writeFrameBuffer(handle, writeb, 32768, pointsPerLoop * BytesPerFrame, NextLoopCounts + i, 0);
+        readOK = writeFrameBuffer(handle, writeb, 32768, k, NextLoopCounts + i, 0);
         if (readOK) break;
     }
 
@@ -723,7 +678,7 @@ int Lumax_SendFrame(void *handle, TLumax_Point *points, int numOfPoints, int sca
         writeb[3] = cycles;
         writeb[4] = cycles / 256;
         writeb[5] = NextLoopCounts + 16 * (maxLoops - 1);
-        writeb[6] = writeb[5] ^ writeb[4] ^ writeb[3] ^ writeb[2] ^ writeb[1] ^ writeb[0];
+        writeb[6] = lumax_checksum(writeb, 6);
         readOK = writeToDev(handle, writeb, 7u);
         if (!readOK) {
             uint8_t readb[4];
@@ -821,7 +776,7 @@ int Lumax_DongleCom(void* handle, int flag, int address, int writeVar, int *read
     writeb[3] = 0;
     writeb[4] = 0;
     writeb[5] = 0;
-    writeb[6] = writeb[5] ^ writeb[4] ^ writeb[3] ^ writeb[2] ^ writeb[1] ^ writeb[0];
+    writeb[6] = lumax_checksum(writeb, 6);
     writeToDev(handle, writeb, 7u);
     if (readFromDev(handle, &byte, 1u) || byte != writeb[6])
         result = 1;
@@ -833,7 +788,7 @@ int Lumax_DongleCom(void* handle, int flag, int address, int writeVar, int *read
     writeb[3] = 0x94;
     writeb[4] = 0x11;
     writeb[5] = 0;
-    writeb[6] = writeb[5] ^ writeb[4] ^ writeb[3] ^ writeb[2] ^ writeb[1] ^ writeb[0];
+    writeb[6] = lumax_checksum(writeb, 6);
     writeToDev(handle, writeb, 7);
     if (readFromDev(handle, &byte, 1u) || byte != writeb[6])
         result = 1;
@@ -860,7 +815,7 @@ int Lumax_SetDmxMode(void *handle, uint8_t a2, uint8_t a3) {
     writeb[3] = 0;
     writeb[4] = 0;
     writeb[5] = 0x10;
-    writeb[6] = writeb[5] ^ writeb[4] ^ writeb[3] ^ writeb[2] ^ writeb[1] ^ writeb[0];
+    writeb[6] = lumax_checksum(writeb, 6);
     writeToDev(handle, writeb, 7u);
     if (readFromDev(handle, &readb, 1u) || readb != writeb[6])
         result = 1;
@@ -871,7 +826,7 @@ int Lumax_SetDmxMode(void *handle, uint8_t a2, uint8_t a3) {
     writeb[3] = 0;
     writeb[4] = 0;
     writeb[5] = 0x11;
-    writeb[6] = writeb[5] ^ writeb[4] ^ writeb[3] ^ writeb[2] ^ writeb[1] ^ writeb[0];
+    writeb[6] = lumax_checksum(writeb, 6);
     writeToDev(handle, writeb, 7);
     if (readFromDev(handle, &readb, 1u) || readb != writeb[6])
         result = 1;
