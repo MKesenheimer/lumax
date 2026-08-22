@@ -310,7 +310,7 @@ class lumax:
         self.lumax_lib.Lumax_SetLogFile((path or "").encode())
 
 class lumax_renderer:
-    def __init__(self):
+    def __init__(self, mirrorx = 0, mirrory = 0):
         self.lmx = lumax()
         ret = self.lmx.get_api_version()
         ret1 = self.lmx.get_physical_devices()
@@ -324,8 +324,8 @@ class lumax_renderer:
             print("[DEBUG] WaitForBuffer return: {}, {}, {}".format(ret2, timeToWait, bufferChanged))
         self.shapes = numpy.array([])
         self.totnpoints = 0
-        self.mirrorx = 1
-        self.mirrory = 1
+        self.mirrorx = mirrorx
+        self.mirrory = mirrory
         
 
     def new_frame(self):
