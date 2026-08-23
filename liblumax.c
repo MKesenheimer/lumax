@@ -49,6 +49,7 @@ uint8_t BufferLayout = 1; // flags[324143], flags[16438], flags[1308] (?), Laser
 char SerialNumber[16];
 uint8_t TTLBuffer = 0; // flags[32], pos = 1440
 uint8_t TTLAvailable = 0; // flags[31], pos = 1436
+int BlankingDelayMs = 0; // nur Reimplementierung (keines der flags im Original): Verzögerung der Lichtausgabe gegenüber der Position in ms, siehe Lumax_SetBlankingDelay
 uint32_t NextLoopCounts = 0; // flags[42]
 uint32_t TimeUntilFree = 0; // flags[44]
 uint32_t TimeOffset = 0; // flags[43], zu erwartende Zeit bis der nächste Frame gesendet werden kann (wird von Lumax_SendFrame gesetzt)
@@ -603,6 +604,28 @@ int Lumax_SetTTL(void *handle, uint8_t TTL) {
     return 0;
 }
 
+// Done (new in the reimplementation — the original driver has no such function)
+// Sets the blanking delay: the time (in milliseconds) by which the laser's
+// light output lags the position output. The diode cannot react instantly,
+// so on fast moves the beam trails the current galvo position. The driver
+// compensates in Lumax_SendFrame by packing all light channels (colors and
+// TTL) from a point that is
+//   delayMs * ScanSpeed / 1000
+// points ahead of the position point (computed per frame with the clamped
+// scan speed), so the beam has settled by the time the galvos arrive.
+// delayMs is clamped to 0..1000; 0 disables the correction (the default).
+int Lumax_SetBlankingDelay(void *handle, int delayMs) {
+    if (isOpen(&handle))
+        return 1; // device is not open
+
+    if (delayMs < 0)
+        delayMs = 0;
+    if (delayMs > 1000)
+        delayMs = 1000;
+    BlankingDelayMs = delayMs;
+    return 0;
+}
+
 // Done
 // timeOut == 0 with both out-params non-NULL: query mode (0x04, byte 1 = 0),
 // the device answers 4 bytes: <XOR> <points low> <points high> <status>.
@@ -749,6 +772,14 @@ int Lumax_SendFrame(void *handle, TLumax_Point *points, int numOfPoints, int sca
     // The original driver always sends 7-byte points for Flavor 1.
     uint32_t ttlMode = (Flavor == 1 && (TTLAvailable & 2u)) ? 2 : 1;
 
+    // Blanking delay (see Lumax_SetBlankingDelay): the light output of the
+    // card lags the position output by a fixed time. To compensate, every
+    // packed point takes its light channels (colors + TTL) from the point
+    // blankingPoints ahead, while the position stays in place — the beam
+    // therefore turns on/off before the galvos reach the position, where
+    // they then find the beam already settled.
+    int blankingPoints = (BlankingDelayMs * scanSpeed) / 1000;
+
     // big loop to fill the buffer
     int readOK;
     int npoint = 0;
@@ -757,8 +788,23 @@ int Lumax_SendFrame(void *handle, TLumax_Point *points, int numOfPoints, int sca
         // all chunks are full (an empty first chunk would be rejected).
         int pointsPerLoop = (i == 0 && residual != 0) ? residual : MaxPoints;
         int k = 0;
-        for (int j = 0; j < pointsPerLoop; ++j)
-            k += (int)lumax_pack_point(Flavor, ttlMode, &lpoints[npoint++], TTLBuffer, writeb + k);
+        for (int j = 0; j < pointsPerLoop; ++j) {
+            TLumax_Point p = lpoints[npoint];
+            if (blankingPoints > 0) {
+                int li = npoint + blankingPoints;
+                if (li >= numOfPoints)
+                    li = numOfPoints - 1; // hold the last light value at the frame end
+                p.Ch3 = lpoints[li].Ch3;
+                p.Ch4 = lpoints[li].Ch4;
+                p.Ch5 = lpoints[li].Ch5;
+                p.Ch6 = lpoints[li].Ch6;
+                p.Ch7 = lpoints[li].Ch7;
+                p.Ch8 = lpoints[li].Ch8;
+                p.TTL = lpoints[li].TTL;
+            }
+            k += (int)lumax_pack_point(Flavor, ttlMode, &p, TTLBuffer, writeb + k);
+            ++npoint;
+        }
         // write to Device
         readOK = writeFrameBuffer(handle, writeb, 32768, k, NextLoopCounts + i, 0);
         if (readOK) break;

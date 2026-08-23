@@ -60,6 +60,20 @@ int Lumax_GetPhysicalDevices();
 // von Lumax_SendFrame zu platzieren.
 int Lumax_SetTTL(void *handle, uint8_t TTL);
 
+// Reimplementierung (im originalen Treiber nicht vorhanden): Setzt die
+// Blanking-Verzögerung, also die Zeit (in Millisekunden), um die die
+// Laserausgabe (Licht) hinter der Positionsausgabe herhängt. Die Laserdiode
+// kann nicht instantan reagieren, sodass der Strahl bei schnellen Bewegungen
+// hinter der aktuellen Galvanometer-Position herzieht.
+// Der Treiber kompensiert dies in Lumax_SendFrame, indem er alle Lichtkanäle
+// (Farben und TTL) um delayMs * ScanSpeed / 1000 Punkte (mit der jeweiligen,
+// eingegrenzten Ausgabegeschwindigkeit des Frames) vor die Position verschiebt.
+// Handle:  Handle zur eindeutigen Identifizierung des Geräts
+// delayMs: 0..1000; 0 = keine Korrektur (Standard). Andere Werte werden
+//          eingegrenzt (geclampt).
+// Rückgabe: 0 bei Erfolg, 1 bei einem Fehler.
+int Lumax_SetBlankingDelay(void *handle, int delayMs);
+
 // Wartet auf das Freiwerden des Empfangspuffers bzw. liefert dessen Status zurück.
 // Handle:          Handle zur eindeutigen Identifizierung des Geräts
 // Timeout:         Wenn als Timeout 0 angegeben wird, so wird lediglich der aktuelle

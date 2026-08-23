@@ -258,6 +258,9 @@ class lumax:
         self.lumax_lib.Lumax_SetTTL.argtypes = (c_void_p, c_int)
         self.lumax_lib.Lumax_SetTTL.restype = c_int
 
+        self.lumax_lib.Lumax_SetBlankingDelay.argtypes = (c_void_p, c_int)
+        self.lumax_lib.Lumax_SetBlankingDelay.restype = c_int
+
         self.lumax_lib.Lumax_WaitForBuffer.argtypes = (c_void_p, c_int, c_int_p, c_int_p)
         self.lumax_lib.Lumax_WaitForBuffer.restype = c_int
 
@@ -314,6 +317,15 @@ class lumax:
 
     def setTTL(self, handle, ttl):
         return int(self.lumax_lib.Lumax_SetTTL(c_void_p(handle), c_int(ttl)))
+
+    def set_blanking_delay(self, handle, delay_ms):
+        """Set the blanking delay in ms: how much the light output lags the
+        position output (the diode cannot react instantly, so the beam
+        trails the galvo position on fast moves). The driver compensates by
+        shifting the light channels (colors + TTL) forward by
+        delay_ms * ScanSpeed / 1000 points per frame.
+        0 disables the correction (the default)."""
+        return int(self.lumax_lib.Lumax_SetBlankingDelay(c_void_p(handle), c_int(delay_ms)))
 
     def wait_for_buffer(self, handle, timeOut):
         timeToWait = c_int(0)
