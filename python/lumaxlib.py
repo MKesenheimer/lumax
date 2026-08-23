@@ -4,6 +4,7 @@ Define the C-variables and functions from the C-files that are needed in Python
 from ctypes import *
 import sys
 import math
+import signal
 import numpy
 
 DEBUG = 0
@@ -269,6 +270,10 @@ class lumax:
         self.lumax_lib.Lumax_CloseDevice.argtypes = (c_void_p,)
         self.lumax_lib.Lumax_CloseDevice.restype = c_int
 
+        # the currently open device handle (0 = none); used by the exit
+        # safety net and to make stop_frame/close_device idempotent
+        self._open_handle = 0
+
     def get_api_version(self):
         return float(self.lumax_lib.Lumax_GetApiVersion())
 
@@ -277,9 +282,35 @@ class lumax:
 
     def open_device(self, numDev, channel):
         try:
-            return int(self.lumax_lib.Lumax_OpenDevice(c_int(numDev), c_int(channel)))
+            handle = int(self.lumax_lib.Lumax_OpenDevice(c_int(numDev), c_int(channel)))
         except:
             return 0
+        if handle:
+            # remember the handle and install the exit safety net.
+            # The C library already installs an atexit/signal backstop
+            # at open time; these Python-level handlers do the same
+            # cleanup and then restore the normal exit semantics
+            # (KeyboardInterrupt on Ctrl+C).
+            self._open_handle = handle
+            self._install_exit_handlers()
+        return handle
+
+    def _install_exit_handlers(self):
+        def on_exit_signal(signum, frame):
+            print("[lumaxlib] got signal %d: blanking beam and closing device" % signum, flush=True)
+            if self._open_handle:
+                self.stop_frame(self._open_handle)
+                self.close_device(self._open_handle)
+            if signum == signal.SIGINT:
+                raise KeyboardInterrupt
+            raise SystemExit(128 + signum)
+        try:
+            signal.signal(signal.SIGINT, on_exit_signal)
+            signal.signal(signal.SIGTERM, on_exit_signal)
+            signal.signal(signal.SIGHUP, on_exit_signal)
+        except ValueError:
+            # not in the main thread; the C-level backstop still applies
+            pass
 
     def setTTL(self, handle, ttl):
         return int(self.lumax_lib.Lumax_SetTTL(c_void_p(handle), c_int(ttl)))
@@ -297,9 +328,16 @@ class lumax:
         return int(ret), int.from_bytes(timeToWait, byteorder='big', signed=True)
 
     def stop_frame(self, handle):
+        # no-op for a stale handle (e.g. after the exit safety net
+        # already stopped and closed the device)
+        if not handle or handle != self._open_handle:
+            return 0
         return int(self.lumax_lib.Lumax_StopFrame(c_void_p(handle)))
 
     def close_device(self, handle):
+        if not handle or handle != self._open_handle:
+            return 0
+        self._open_handle = 0
         return int(self.lumax_lib.Lumax_CloseDevice(c_void_p(handle)))
 
     def set_logfile(self, path):

@@ -14,7 +14,11 @@ int clearBuffer(void *handle);
 
 void checkIfBusy(void *handle, uint32_t ftStatus);
 
-int isOpen(void *handle);
+int isOpen(void **handle);
+
+int sendInitKey(void *handle);
+
+int sendKey(void *handle, int flavor);
 
 int writeToDev(void *handle, uint8_t *buffer, uint32_t bytesToWrite);
 

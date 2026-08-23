@@ -23,6 +23,7 @@
 // TODO
 int main(int argc, char *argv[]) {
     //lumax_verbosity = DBG_WRITETODEV | DBG_READMEMORY | DBG_OPENDEVICE;
+    Lumax_SetLogFile("/tmp/lumax_test.log");
 
     int result = 0;
     int NumOfCards = Lumax_GetPhysicalDevices();

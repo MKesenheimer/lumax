@@ -36,6 +36,14 @@ void Lumax_SetLogFile(const char *path);
 // Liefert Informationen zum angeschlossenen Gerät.
 // Für die Abfrage der Information muss die Karte nicht unbedingt zuvor mit Lumax_OpenDevice
 // geöffnet worden sein, es schadet aber auch nicht, sollte sie bereits geöffnet sein.
+// physicalDevice: Nummer der Ausgabekarte (1..8, siehe Lumax_OpenDevice).
+// infoID:         Startadresse (0..462) innerhalb des 463 Byte großen
+//                 Gerätespeicherbereichs.
+// inBuffer:       reserviert (der Gerätespeicher wird nur gelesen), muss NULL sein.
+// inLength:       Anzahl der zu lesenden Byte; 0 = bis zum Ende des Bereichs.
+// outBuffer:      Puffer, in den die gelesenen Byte geschrieben werden.
+// outLength:      Größe des Puffers outBuffer.
+// Rückgabe:       0 bei Erfolg, 1 bei einem Fehler.
 int Lumax_GetDeviceInfo(int physicalDevice, int infoID, uint8_t *inBuffer, uint16_t inLength, uint8_t *outBuffer, uint16_t outLength);
 
 // Liefert als Ergebnis die Anzahl aller angeschlossenen 
@@ -94,7 +102,18 @@ int Lumax_StopFrame(void* handle);
 // Hinweis: Die originale API hatte hier keine Parameter; die Parameter wurden
 // bei der Reimplementierung ergänzt, da der interne Dongle-Austausch das
 // Geräte-Handle benötigt.
-int Lumax_DongleCom(void* handle, int flag, int address, int writeVar, int *readVar);
+// flag:     Art des Austauschs (1, 0x2b, 0x55, 0x5a, 0x81..0x86); siehe
+//           PROTOCOL.md (0xCD) für die Bedeutung jedes Flags.
+// address:  Adresse des Gerätespeicherbereichs; für die Flags 1, 0x2b, 0x55
+//           und 0x5a wird die feste Lizenzadresse verwendet und der Parameter
+//           ignoriert.
+// writeVar: Zeiger auf einen Schreibwert; je nach Flag wird er als Byte,
+//           32-Bit-Wert oder als Zeiger auf den 16-Byte-Schlüsselbuffer
+//           verwendet (siehe PROTOCOL.md).
+// readVar:  Zeiger, in den der gelesene Wert geschrieben wird; je nach Flag
+//           ein Byte bzw. ein- bis dreifacher 32-Bit-Wert. Für Flag 0x55
+//           muss er vor dem Aufruf den Wert 0xff555500 enthalten.
+int Lumax_DongleCom(void* handle, int flag, int address, int *writeVar, int *readVar);
 
 // Aktiviert bzw. deaktiviert den DMX512 Sender bzw. Empfänger auf der Minilumax-Karte. 
 // Es ist zu beachten, dass ein aktiver Sender/Empfänger Rechenleistung auf der Ausgabekarte 
@@ -108,7 +127,7 @@ int Lumax_DongleCom(void* handle, int flag, int address, int writeVar, int *read
 //                  DMX512-Spezifikation eine Länge von 512 Byte plus 1 Startbyte erlaubt 
 //                  ist, sollte der Wert auf 512 gesetzt werden, um den Empfänger zu aktivieren.
 //                  Der Wert 0 schaltet den DMX-Empfänger aus.
-int Lumax_SetDmxMode(void *handle, uint8_t a2, uint8_t a3);
+int Lumax_SetDmxMode(void *handle, int numOfTxChannels, int numOfRxChannels);
 
 // Öffnet das angegebene Gerät für die weitere Nutzung. Eine möglicherweise 
 // von vorheriger Nutzung noch laufende Laserausgabe wird angehalten, 

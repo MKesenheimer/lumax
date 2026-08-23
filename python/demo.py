@@ -8,6 +8,7 @@ import numpy
 def main():
     try:
         renderer = lumax_renderer()
+        renderer.lmx.set_logfile('/tmp/lumax_demo.log')  # debug: byte-level capture
 
         # setup frame, generate a circle
         brigthness = 0.45 # 0 to 1
