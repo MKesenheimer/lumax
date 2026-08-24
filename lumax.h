@@ -33,6 +33,15 @@ float Lumax_GetApiVersion();
 //        NULL-Pfad deaktiviert die Erfassung.
 void Lumax_SetLogFile(const char *path);
 
+// Setzt die Blanking-Verzögerung in Millisekunden. Bei jedem off->on
+// Lichtübergang (Laser wird eingeschaltet) werden so viele Millisekunden
+// an zusätzlichen blanken (Laser-aus) Punkten an der gleichen Position
+// eingefügt. Dies gibt den Galvanometern Zeit, sich zu stabilisieren,
+// bevor das Licht erscheint. Bei jedem on->off Übergang werden
+// zusätzliche "on"-Punkte vor dem Ausschalten hinzugefügt.
+// delay_ms: Blanking-Verzögerung in Millisekunden (0 = deaktiviert, Standard).
+void Lumax_SetBlankingDelay(int delay_ms);
+
 // Liefert Informationen zum angeschlossenen Gerät.
 // Für die Abfrage der Information muss die Karte nicht unbedingt zuvor mit Lumax_OpenDevice
 // geöffnet worden sein, es schadet aber auch nicht, sollte sie bereits geöffnet sein.

@@ -10,6 +10,10 @@ def main():
         renderer = lumax_renderer()
         renderer.lmx.set_logfile('/tmp/lumax_demo.log')  # debug: byte-level capture
 
+        # Set blanking delay to 2ms to compensate for galvanometer lag at high speeds
+        # This inserts blank points at off->on transitions and extra on-points at on->off
+        renderer.set_blanking_delay(2)
+
         # setup frame, generate a circle
         brigthness = 0.45 # 0 to 1
         r = int(brigthness * 255 * 255)
@@ -30,7 +34,7 @@ def main():
         renderer.add_point_to_frame(point)
 
         # send the frame to the device
-        renderer.send_frame(1000)
+        renderer.send_frame(10000)
 
         # wait
         time.sleep(1)
@@ -58,7 +62,7 @@ def main():
         renderer.add_shape_to_frame(square)
 
         # send the frame to the device
-        renderer.send_frame(1000)
+        renderer.send_frame(10000)
 
         # wait
         time.sleep(100)

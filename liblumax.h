@@ -30,4 +30,11 @@ int readID(void *handle, uint8_t *arr, uint16_t size);
 
 int readMemory(void *handle, uint8_t *arr, uint16_t start, uint16_t end);
 
+// Set the blanking delay in milliseconds. At each off->on light transition
+// (laser turned on), this many ms worth of blank (laser-off) points are
+// inserted at the same position. At each on->off transition, extra "on"
+// points are added before the laser turns off.
+// delay_ms: blanking delay in milliseconds (0 = disabled, default).
+void Lumax_SetBlankingDelay(int delay_ms);
+
 int dongleCom(void *handle, uint8_t flag, uint32_t address, uint8_t *writeBuffer, uint8_t *readBuffer);

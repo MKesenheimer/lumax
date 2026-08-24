@@ -33,6 +33,11 @@ int MaxScanSpeed = 70000; // flags[51]
 int Flavor = 1; // flags[49], LaserWorld Lumax = 1, Bare-Lumax = 4
 const uint32_t ClockSpeed = 16000000; // flags[324144]
 
+// Blanking delay: number of additional blank (laser-off) points to insert
+// at each off->on transition. Set via Lumax_SetBlankingDelay(delay_ms).
+// The delay is converted to point count based on the current scan speed.
+static int BlankingDelayMs = 0; // blanking delay in milliseconds
+
 // größte Frame-Chunk-Größe in Byte: 9 Byte/Punkt (Flavor 16, RGB + Cyan +
 // DeepBlue + Yellow) * 4500 Punkte (MaxPoints) pro Chunk
 #define MaxFrameBytes (9 * 4500)
@@ -457,6 +462,18 @@ void Lumax_SetLogFile(const char *path) {
         lumax_logfile[0] = '\0';
 }
 
+// Set the blanking delay in milliseconds. At each off->on light transition
+// (i.e. when the laser is turned on), this many milliseconds worth of
+// blank (laser-off) points are inserted at the same position, giving the
+// galvanometers time to settle before the light comes on. The delay is
+// converted to a point count using the current scan speed (PPS).
+// delay_ms: blanking delay in milliseconds (0 = disabled, default).
+void Lumax_SetBlankingDelay(int delay_ms) {
+    if (delay_ms < 0)
+        delay_ms = 0;
+    BlankingDelayMs = delay_ms;
+}
+
 // Done
 // infoID:    start offset (0..462) into the 463-byte device memory
 // inLength:  number of bytes to read (0 = until the end of the memory)
@@ -678,6 +695,25 @@ int Lumax_CloseDevice(void* handle) {
 }
 
 // Done
+// Internal helper: check if a point has any color channel active (laser "on")
+static int pointHasColor(const TLumax_Point *p) {
+    return (p->Ch3 != 0 || p->Ch4 != 0 || p->Ch5 != 0 || p->Ch6 != 0 || p->Ch7 != 0 || p->Ch8 != 0);
+}
+
+// Internal helper: create a blank point (same position, all colors off)
+static void makeBlankPoint(const TLumax_Point *src, TLumax_Point *dst) {
+    dst->Ch1 = src->Ch1;
+    dst->Ch2 = src->Ch2;
+    dst->Ch3 = 0;
+    dst->Ch4 = 0;
+    dst->Ch5 = 0;
+    dst->Ch6 = 0;
+    dst->Ch7 = 0;
+    dst->Ch8 = 0;
+    dst->TTL = 0;
+}
+
+// Done
 int Lumax_SendFrame(void *handle, TLumax_Point *points, int numOfPoints, int scanSpeed, int updateMode, int *timeToWait) {
     // variables
     // worst case is 9 bytes per point (Flavor 16), MaxPoints (4500) per chunk
@@ -685,6 +721,58 @@ int Lumax_SendFrame(void *handle, TLumax_Point *points, int numOfPoints, int sca
     TLumax_Point point;
     TLumax_Point *lpoints;
     lpoints = points;
+
+    // Apply blanking delay if configured: expand the frame by inserting
+    // extra blank points at off->on transitions and extra "on" points
+    // at on->off transitions.
+    if (BlankingDelayMs > 0 && numOfPoints > 0 && scanSpeed > 0) {
+        // Calculate how many points correspond to the delay at this scan speed
+        int delayPoints = (BlankingDelayMs * scanSpeed) / 1000;
+        if (delayPoints > 0) {
+            // We need to expand the frame. Maximum expansion: each point could
+            // be a transition, so worst case is ~2*delayPoints per transition.
+            // Use a static buffer large enough for the expanded frame.
+            // Max original points: 16 * MaxPoints / 2 = 36000
+            // With blanking delay, could be significantly more.
+            // For simplicity, process in-place by creating a new expanded array.
+            static TLumax_Point expandedPoints[72000]; // 2x max original
+            int expandedCount = 0;
+
+            for (int i = 0; i < numOfPoints; ++i) {
+                int hasColor = pointHasColor(&lpoints[i]);
+                int prevHasColor = (i > 0) ? pointHasColor(&lpoints[i - 1]) : 0;
+                int nextHasColor = (i + 1 < numOfPoints) ? pointHasColor(&lpoints[i + 1]) : 0;
+
+                // Off->on transition: insert delayPoints blank points at this position
+                if (!prevHasColor && hasColor) {
+                    for (int d = 0; d < delayPoints; ++d) {
+                        if (expandedCount < 72000) {
+                            makeBlankPoint(&lpoints[i], &expandedPoints[expandedCount++]);
+                        }
+                    }
+                }
+
+                // Copy the current point
+                if (expandedCount < 72000) {
+                    expandedPoints[expandedCount++] = lpoints[i];
+                }
+
+                // On->off transition: add delayPoints extra "on" points before the off point
+                if (hasColor && !nextHasColor) {
+                    for (int d = 0; d < delayPoints; ++d) {
+                        if (expandedCount < 72000) {
+                            expandedPoints[expandedCount++] = lpoints[i];
+                        }
+                    }
+                }
+            }
+
+            if (expandedCount > 0) {
+                lpoints = expandedPoints;
+                numOfPoints = expandedCount;
+            }
+        }
+    }
 
 #ifdef DEBUG_POSSIBLE
     if (lumax_verbosity & DBG_SENDFRAME || lumax_verbosity & DBG_ALL) {

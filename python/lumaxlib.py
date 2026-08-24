@@ -270,6 +270,9 @@ class lumax:
         self.lumax_lib.Lumax_CloseDevice.argtypes = (c_void_p,)
         self.lumax_lib.Lumax_CloseDevice.restype = c_int
 
+        self.lumax_lib.Lumax_SetBlankingDelay.argtypes = (c_int,)
+        self.lumax_lib.Lumax_SetBlankingDelay.restype = None
+
         # the currently open device handle (0 = none); used by the exit
         # safety net and to make stop_frame/close_device idempotent
         self._open_handle = 0
@@ -347,6 +350,15 @@ class lumax:
         self.lumax_lib.Lumax_SetLogFile.restype = None
         self.lumax_lib.Lumax_SetLogFile((path or "").encode())
 
+    def set_blanking_delay(self, delay_ms):
+        """Set the blanking delay in milliseconds.
+        At each off->on light transition, this many ms worth of blank
+        (laser-off) points are inserted at the same position.
+        At each on->off transition, extra 'on' points are added before
+        the laser turns off.
+        delay_ms: blanking delay in milliseconds (0 = disabled, default)."""
+        self.lumax_lib.Lumax_SetBlankingDelay(c_int(delay_ms))
+
 class lumax_renderer:
     def __init__(self, mirrorx = 0, mirrory = 0):
         self.lmx = lumax()
@@ -364,6 +376,17 @@ class lumax_renderer:
         self.totnpoints = 0
         self.mirrorx = mirrorx
         self.mirrory = mirrory
+        self.blanking_delay_ms = 0
+
+    def set_blanking_delay(self, delay_ms):
+        """Set the blanking delay in milliseconds.
+        At each off->on light transition, this many ms worth of blank
+        (laser-off) points are inserted at the same position.
+        At each on->off transition, extra 'on' points are added before
+        the laser turns off.
+        delay_ms: blanking delay in milliseconds (0 = disabled, default)."""
+        self.blanking_delay_ms = delay_ms
+        self.lmx.set_blanking_delay(delay_ms)
         
 
     def new_frame(self):
