@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdint.h>
+
 // Punktinformationen
 // Es handelt sich um vorzeichenlose 16-Bit-Werte
 // Ch1=X, Ch2=Y:                    0=links/unten, 32768=mitte, 65535=rechts/oben
@@ -25,9 +27,32 @@ typedef struct
 // Liefert die Versionsnummer der DLL zurück.
 float Lumax_GetApiVersion();
 
+// DEBUG (Reimplementierung): aktiviert die Byte-Erfassung des Protokolls.
+// path: Datei, in die jeder Datenaustausch mit dem Gerät als Hex-Dump
+//       angehängt wird (eine Zeile pro Übertragung); ein leerer oder
+//        NULL-Pfad deaktiviert die Erfassung.
+void Lumax_SetLogFile(const char *path);
+
+// Setzt die Blanking-Verzögerung in Millisekunden. Bei jedem off->on
+// Lichtübergang (Laser wird eingeschaltet) werden so viele Millisekunden
+// an zusätzlichen blanken (Laser-aus) Punkten an der gleichen Position
+// eingefügt. Dies gibt den Galvanometern Zeit, sich zu stabilisieren,
+// bevor das Licht erscheint. Bei jedem on->off Übergang werden
+// zusätzliche "on"-Punkte vor dem Ausschalten hinzugefügt.
+// delay_ms: Blanking-Verzögerung in Millisekunden (0 = deaktiviert, Standard).
+void Lumax_SetBlankingDelay(int delay_ms);
+
 // Liefert Informationen zum angeschlossenen Gerät.
 // Für die Abfrage der Information muss die Karte nicht unbedingt zuvor mit Lumax_OpenDevice
 // geöffnet worden sein, es schadet aber auch nicht, sollte sie bereits geöffnet sein.
+// physicalDevice: Nummer der Ausgabekarte (1..8, siehe Lumax_OpenDevice).
+// infoID:         Startadresse (0..462) innerhalb des 463 Byte großen
+//                 Gerätespeicherbereichs.
+// inBuffer:       reserviert (der Gerätespeicher wird nur gelesen), muss NULL sein.
+// inLength:       Anzahl der zu lesenden Byte; 0 = bis zum Ende des Bereichs.
+// outBuffer:      Puffer, in den die gelesenen Byte geschrieben werden.
+// outLength:      Größe des Puffers outBuffer.
+// Rückgabe:       0 bei Erfolg, 1 bei einem Fehler.
 int Lumax_GetDeviceInfo(int physicalDevice, int infoID, uint8_t *inBuffer, uint16_t inLength, uint8_t *outBuffer, uint16_t outLength);
 
 // Liefert als Ergebnis die Anzahl aller angeschlossenen 
@@ -81,9 +106,23 @@ int Lumax_SendFrame(void *handle, TLumax_Point *points, int numOfPoints, int sca
 int Lumax_StopFrame(void* handle);
 
 // Notiz: Wird nur für die "Bare"-Lumax aufgerufen
-// Und auch dann hat der Aufruf keine Auswirkung auf den weiteren 
+// Und auch dann hat der Aufruf keine Auswirkung auf den weiteren
 // Programmablauf
-int Lumax_DongleCom();
+// Hinweis: Die originale API hatte hier keine Parameter; die Parameter wurden
+// bei der Reimplementierung ergänzt, da der interne Dongle-Austausch das
+// Geräte-Handle benötigt.
+// flag:     Art des Austauschs (1, 0x2b, 0x55, 0x5a, 0x81..0x86); siehe
+//           PROTOCOL.md (0xCD) für die Bedeutung jedes Flags.
+// address:  Adresse des Gerätespeicherbereichs; für die Flags 1, 0x2b, 0x55
+//           und 0x5a wird die feste Lizenzadresse verwendet und der Parameter
+//           ignoriert.
+// writeVar: Zeiger auf einen Schreibwert; je nach Flag wird er als Byte,
+//           32-Bit-Wert oder als Zeiger auf den 16-Byte-Schlüsselbuffer
+//           verwendet (siehe PROTOCOL.md).
+// readVar:  Zeiger, in den der gelesene Wert geschrieben wird; je nach Flag
+//           ein Byte bzw. ein- bis dreifacher 32-Bit-Wert. Für Flag 0x55
+//           muss er vor dem Aufruf den Wert 0xff555500 enthalten.
+int Lumax_DongleCom(void* handle, int flag, int address, int *writeVar, int *readVar);
 
 // Aktiviert bzw. deaktiviert den DMX512 Sender bzw. Empfänger auf der Minilumax-Karte. 
 // Es ist zu beachten, dass ein aktiver Sender/Empfänger Rechenleistung auf der Ausgabekarte 
@@ -97,7 +136,7 @@ int Lumax_DongleCom();
 //                  DMX512-Spezifikation eine Länge von 512 Byte plus 1 Startbyte erlaubt 
 //                  ist, sollte der Wert auf 512 gesetzt werden, um den Empfänger zu aktivieren.
 //                  Der Wert 0 schaltet den DMX-Empfänger aus.
-int Lumax_SetDmxMode(void *handle, uint8_t a2, uint8_t a3);
+int Lumax_SetDmxMode(void *handle, int numOfTxChannels, int numOfRxChannels);
 
 // Öffnet das angegebene Gerät für die weitere Nutzung. Eine möglicherweise 
 // von vorheriger Nutzung noch laufende Laserausgabe wird angehalten, 
@@ -114,19 +153,28 @@ int Lumax_SetDmxMode(void *handle, uint8_t a2, uint8_t a3);
 //          das Gerät nicht geöffnet werden konnte, so wird 0 zurückgegeben.
 void* Lumax_OpenDevice(int numDev, int channel);
 
-// DEBUG Flags
-//#define DEBUG_POSSIBLE
-const uint32_t DBG_INFO = 1;
-const uint32_t DBG_GENERAL = 2;
-const uint32_t DBG_WRITETODEV = 4;
-const uint32_t DBG_READFROMDEV = 8;
-const uint32_t DBG_WRITEFRAMEBUFFER = 16;
-const uint32_t DBG_READID = 32;
-const uint32_t DBG_READMEMORY = 64;
-const uint32_t DBG_WAITFORBUFFER = 128;
-const uint32_t DBG_SENDFRAME = 256;
-const uint32_t DBG_SETDMXMODE = 512;
-const uint32_t DBG_OPENDEVICE = 1024;
-const uint32_t DBG_CHECKIFBUSY = 2048;
-const uint32_t DBG_ISOPEN = 4096;
+// DEBUG Flags (defined in liblumax.c)
+#define DEBUG_POSSIBLE
+extern const uint32_t DBG_FATAL;
+extern const uint32_t DBG_ERROR;
+extern const uint32_t DBG_WARN;
+extern const uint32_t DBG_INFO;
+extern const uint32_t DBG_GENERAL;
+extern const uint32_t DBG_WRITETODEV;
+extern const uint32_t DBG_READFROMDEV;
+extern const uint32_t DBG_WRITEFRAMEBUFFER;
+extern const uint32_t DBG_READID;
+extern const uint32_t DBG_READMEMORY;
+extern const uint32_t DBG_WAITFORBUFFER;
+extern const uint32_t DBG_SENDFRAME;
+extern const uint32_t DBG_SETDMXMODE;
+extern const uint32_t DBG_OPENDEVICE;
+extern const uint32_t DBG_CHECKIFBUSY;
+extern const uint32_t DBG_ISOPEN;
+extern const uint32_t DBG_ALL;
 extern uint32_t lumax_verbosity;
+
+// Byte-level protocol capture (see PROTOCOL.md): when this names a file,
+// every transfer to/from the device is appended to it as a hex dump.
+// An empty string disables logging (the default).
+extern char lumax_logfile[256];

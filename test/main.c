@@ -23,14 +23,14 @@
 // TODO
 int main(int argc, char *argv[]) {
     //lumax_verbosity = DBG_WRITETODEV | DBG_READMEMORY | DBG_OPENDEVICE;
+    Lumax_SetLogFile("/tmp/lumax_test.log");
 
-    int result;
+    int result = 0;
     int NumOfCards = Lumax_GetPhysicalDevices();
     printf("Number of MiniLumax devices: %i\n", NumOfCards);
-    if (NumOfCards > 0)
-    {
+    if (NumOfCards > 0) {
         void* Handle = Lumax_OpenDevice(1, 0);
-        printf("Lumax_OpenDevice returned handle: 0x%x\n", (unsigned int)Handle);
+        printf("Lumax_OpenDevice returned handle: 0x%x\n", (unsigned int)(uintptr_t)Handle);
 
         if (Handle > 0) {
             result = Lumax_SetTTL(Handle, 0xff);
@@ -46,7 +46,7 @@ int main(int argc, char *argv[]) {
             while(1) {
                 f = (f + 1) % numberOfFrames;
                 const int numOfPoints = 1;
-                TLumax_Point Points[numOfPoints];
+                TLumax_Point Points[1];
                 const int mid = 32768;
                 for (int i = 0; i < numOfPoints; i++) {
                     Points[i].Ch1 = mid + (f + 50) * 40 * sin((float)2 * M_PI * i / numOfPoints); // x

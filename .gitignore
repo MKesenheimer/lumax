@@ -1,10 +1,14 @@
 .DS_Store
 *.o
+libs/
 python/libs
 **/__pycache__
 test/lumax.h
 test/libs
 test/*.exe
+test/test_protocol
 test/main_linux
 test/main_darwin
 .vscode
+a.out
+test/libftdi/
