@@ -24,13 +24,7 @@
 // - Wird die DongleCom-Funktion aufgerufen? (bis jetzt noch nicht vollständig verstanden und implementiert)
 
 // constants
-// TODO: in Struktur oder globale Klasse anordnen
-// (nicht const: sendKey() schreibt diese Werte auf Bare-Lumax-Karten neu)
-int MaxPoints = 4500; // flags[36], pos = 1456
 const int MinScanSpeed = 250;
-int MaxScanSpeed = 70000; // flags[51]
-// Danach richtet sich die Anzahl der Farbkanäle der Lumax
-int Flavor = 1; // flags[49], LaserWorld Lumax = 1, Bare-Lumax = 4
 const uint32_t ClockSpeed = 16000000; // flags[324144]
 
 // Blanking delay: number of additional blank (laser-off) points to insert
@@ -46,26 +40,11 @@ static int BlankingDelayMs = 0; // blanking delay in milliseconds
 const uint32_t vid = 0x403;
 const uint32_t pid = 0xc88a;
 
-// globals
-// TTL buffer
-// hier können globale TTL Werte gesetzt werden, die bei jedem SendFrame
-// mitgesendet werden.
-uint8_t BufferLayout = 1; // flags[324143], flags[16438], flags[1308] (?), LaserWorld Lumax = 1, Bare Lumax = 5
-char SerialNumber[16];
-uint8_t TTLBuffer = 0; // flags[32], pos = 1440
-uint8_t TTLAvailable = 0; // flags[31], pos = 1436
-uint32_t NextLoopCounts = 0; // flags[42]
-uint32_t TimeUntilFree = 0; // flags[44]
-uint32_t TimeOffset = 0; // flags[43], zu erwartende Zeit bis der nächste Frame gesendet werden kann (wird von Lumax_SendFrame gesetzt)
-uint32_t NumberOfFramesSend = 0; // flags[2790]
-uint32_t ScanSpeed = 1000; // flags[46]
-uint32_t LastDivisor = 1000; // flags[45], zuletzt verwendete Scan-Geschwindigkeit
-uint32_t NumberOfPoints = 0; // flags[47]
-uint32_t DmxFlavorMask = 0; // flags[50], ungleich 0 nur bei Bare-Lumax (id[4] 9..0xb)
-void *openHandle = NULL; // letztes Handle aus Lumax_OpenDevice, für Lumax_GetDeviceInfo
-//uint32_t Handle = 0; // flags[1], pos = 1316
-uint32_t IsBusy = 0; // flags[30], pos = 1432
-uint32_t BusyTime; // flags[37], pos = 1460
+// Per-device state lives in struct lumax_device (see liblumax.h): one
+// instance per open card, allocated by Lumax_OpenDevice, freed by
+// Lumax_CloseDevice. open_devices is the process-wide registry (indexed
+// by numDev, 1..8) used by the exit-safety net and Lumax_GetDeviceInfo.
+static struct lumax_device *open_devices[9] = {0}; // index 0 unused
 
 // DEBUG Flags (declared in lumax.h)
 const uint32_t DBG_FATAL = 1;
@@ -121,9 +100,57 @@ static void logBytes(const char *dir, const uint8_t *data, uint32_t len) {
 }
 
 // Done
-int openDev(int numDev, void **handle) {
+// Low-level open of the card with the given USB serial (empty string =
+// first vid/pid match). Sets dev->ftdi.
+int openDevBySerial(const char *serial, struct lumax_device *dev) {
     uint32_t ret;
     struct ftdi_context *ftHandle;
+
+    if ((ftHandle = ftdi_new()) == 0) {
+#ifdef DEBUG_POSSIBLE
+        if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
+            fprintf(stderr, "[ERROR] openDevBySerial: ftdi_new failed.\n");
+#endif
+        return 1;
+    }
+
+    if ((ret = ftdi_usb_open_desc(ftHandle, vid, pid, NULL, serial)) < 0) {
+#ifdef DEBUG_POSSIBLE
+        if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
+            fprintf(stderr, "[ERROR] openDevBySerial: ftdi_usb_open_desc failed: %d\n", (int)ret);
+#endif
+        ftdi_free(ftHandle);
+        return 1;
+    }
+
+    ftdi_set_latency_timer(ftHandle, 2);
+    ftHandle->usb_read_timeout = 1000;
+    ftHandle->usb_write_timeout = 1000;
+    dev->ftdi = ftHandle;
+    return 0;
+}
+
+// Done
+// Opens the numDev-th connected card (1..8). All connected cards are
+// sorted ascending by their alphanumerical serial number (see the
+// Lumax_OpenDevice documentation in lumax.h); card 1 is the
+// alphabetically first one. The chosen serial is stored in dev->serial
+// so the same physical card can be re-opened by identity (busy-recovery).
+static int serialCompare(const void *a, const void *b) {
+    return strcmp(*(const char *const*)a, *(const char *const*)b);
+}
+
+int openDev(int numDev, struct lumax_device *dev) {
+    struct ftdi_context *ftHandle;
+    struct ftdi_device_list *devlist, *curdev;
+    char manufacturer[128], description[128];
+    char serials[8][16];
+    const char *sorted[8];
+    int count = 0;
+    uint32_t ret;
+
+    if (numDev < 1 || numDev > 8)
+        return 1;
 
     if ((ftHandle = ftdi_new()) == 0) {
 #ifdef DEBUG_POSSIBLE
@@ -133,26 +160,54 @@ int openDev(int numDev, void **handle) {
         return 1;
     }
 
-    // TODO: check if device is already open
-    if ((ret = ftdi_usb_open_desc(ftHandle, vid, pid, NULL, SerialNumber)) < 0) {
+    if ((ret = ftdi_usb_find_all(ftHandle, &devlist, vid, pid)) < 1) {
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
-            fprintf(stderr, "[ERROR] openDev: ftdi_usb_open_desc failed: %d\n", ret);
+            fprintf(stderr, "[ERROR] openDev: no device found: %d (%s)\n", (int)ret, ftdi_get_error_string(ftHandle));
 #endif
         ftdi_free(ftHandle);
         return 1;
     }
 
-    ftdi_set_latency_timer(ftHandle, 2);
-    ftHandle->usb_read_timeout = 1000;
-    ftHandle->usb_write_timeout = 1000;
-    *handle = ftHandle;
-    return 0;
+    for (curdev = devlist; curdev != NULL && count < 8; curdev = curdev->next) {
+        if ((ret = ftdi_usb_get_strings(ftHandle, curdev->dev, manufacturer, 128, description, 128, serials[count], 16)) < 0)
+            continue;
+        if (serials[count][0] == '\0')
+            continue;
+        sorted[count] = serials[count];
+        ++count;
+    }
+    ftdi_list_free(&devlist);
+    ftdi_free(ftHandle);
+
+    if (numDev > count) {
+#ifdef DEBUG_POSSIBLE
+        if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
+            fprintf(stderr, "[ERROR] openDev: device %d requested, only %d connected.\n", numDev, count);
+#endif
+        return 1;
+    }
+
+    qsort(sorted, (size_t)count, sizeof(sorted[0]), serialCompare);
+
+    // a card that is already open (another handle) cannot be opened again
+    for (int i = 1; i <= 8; ++i) {
+        if (open_devices[i] && strcmp(open_devices[i]->serial, sorted[numDev - 1]) == 0) {
+#ifdef DEBUG_POSSIBLE
+            if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
+                fprintf(stderr, "[ERROR] openDev: device %d (serial %s) is already open.\n", numDev, sorted[numDev - 1]);
+#endif
+            return 1;
+        }
+    }
+
+    snprintf(dev->serial, sizeof(dev->serial), "%s", sorted[numDev - 1]);
+    return openDevBySerial(dev->serial, dev);
 }
 
 // Done
-int clearBuffer(void *handle) {
-    struct ftdi_context *ftHandle = (struct ftdi_context*)handle;
+int clearBuffer(struct lumax_device *dev) {
+    struct ftdi_context *ftHandle = dev->ftdi;
     uint8_t buffer[256];
     memset(buffer, 0, sizeof(buffer));
     for (int i = 0; i < 256; ++i)
@@ -164,51 +219,69 @@ int clearBuffer(void *handle) {
 }
 
 // Done
-void checkIfBusy(void *handle, uint32_t ftStatus) {
-    if (ftStatus == -1 && IsBusy != 1) {
+void checkIfBusy(struct lumax_device *dev, uint32_t ftStatus) {
+    if (ftStatus == -1 && dev->IsBusy != 1) {
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_CHECKIFBUSY || lumax_verbosity & DBG_ALL)
-            printf("[DEBUG] checkIfBusy: Device with handle 0x%x is busy.\n", (unsigned int)(uintptr_t)handle);
+            printf("[DEBUG] checkIfBusy: Device with handle 0x%x is busy.\n", (unsigned int)(uintptr_t)dev);
 #endif
-        IsBusy = 1;
-        BusyTime = timeGetTime();
+        dev->IsBusy = 1;
+        dev->BusyTime = timeGetTime();
     }
 }
 
 // Done
-// The handle is passed by reference: the busy-recovery path below closes
-// the stale device and opens a fresh one, so the caller must receive the
-// new context pointer (writing it into the old, freed one would be a
-// use-after-free).
-int isOpen(void **handle) {
-    if (!handle || *handle == 0)
+// The handle is a stable struct pointer: the busy-recovery path replaces
+// the FTDI context inside the struct and re-runs the full open handshake
+// (lumax_init_device), so the caller's handle stays valid — the old
+// design swapped the raw ftdi_context and left the caller's copy
+// dangling (freed context).
+int isOpen(struct lumax_device *dev) {
+    if (!dev || !dev->ftdi)
         return 1; // 1 means error, device is closed!
 
-    if (IsBusy) {
+    if (dev->IsBusy && !dev->recovering) {
         uint32_t time = timeGetTime();
-        uint32_t diff = time - BusyTime;
+        uint32_t diff = time - dev->BusyTime;
         // if device is busy for too long:
-        if (diff > 2000 && IsBusy == 1) {
-            Lumax_CloseDevice(*handle);
-            // open new device
-            if (openDev(0, handle)) { // TODO: handle multiple devices
-                // opening the device failed
-                *handle = NULL;
-                BusyTime = time;
+        if (diff > 2000 && dev->IsBusy == 1) {
+#ifdef DEBUG_POSSIBLE
+            if (lumax_verbosity & DBG_ISOPEN || lumax_verbosity & DBG_ALL)
+                printf("[DEBUG] isOpen: device busy for %u ms, re-opening and re-initializing.\n", (unsigned)diff);
+#endif
+            ftdi_usb_close(dev->ftdi);
+            ftdi_free(dev->ftdi);
+            dev->ftdi = NULL;
+            dev->IsBusy = 0;
+            dev->BusyTime = time;
+            dev->recovering = 1;
+            if (openDevBySerial(dev->serial, dev)) {
+                // the card is gone again: keep the struct (the handle
+                // stays valid) but refuse all further I/O
+                dev->recovering = 0;
                 return 1;
             }
-            openHandle = *handle;
+            if (lumax_init_device(dev)) {
+                // re-initialization failed: drop the link again, I/O
+                // will be refused until a later recovery succeeds
+                dev->recovering = 0;
+                ftdi_usb_close(dev->ftdi);
+                ftdi_free(dev->ftdi);
+                dev->ftdi = NULL;
+                return 1;
+            }
+            dev->recovering = 0;
         }
     }
 
     // all good
-    IsBusy = 0;
+    dev->IsBusy = 0;
     return 0;
 }
 
 // Done
-int writeToDev(void *handle, uint8_t *buffer, uint32_t bytesToWrite) {
-    struct ftdi_context *ftHandle = (struct ftdi_context*)handle;
+int writeToDev(struct lumax_device *dev, uint8_t *buffer, uint32_t bytesToWrite) {
+    struct ftdi_context *ftHandle = dev->ftdi;
     uint32_t bytesWritten;
     uint32_t ftStatus = ftdi_write_data(ftHandle, buffer, bytesToWrite);
     bytesWritten = ftStatus;
@@ -227,7 +300,7 @@ int writeToDev(void *handle, uint8_t *buffer, uint32_t bytesToWrite) {
             printf("[DEBUG] writeToDev: bytesToWrite != bytesWritten.\n");
         }
 #endif
-        checkIfBusy(handle, ftStatus);
+        checkIfBusy(dev, ftStatus);
         return 1;
     }
 
@@ -235,8 +308,8 @@ int writeToDev(void *handle, uint8_t *buffer, uint32_t bytesToWrite) {
     return 0;
 }
 
-int readFromDev(void *handle, uint8_t *buffer, uint32_t bytesToRead) {
-    struct ftdi_context *ftHandle = (struct ftdi_context*)handle;
+int readFromDev(struct lumax_device *dev, uint8_t *buffer, uint32_t bytesToRead) {
+    struct ftdi_context *ftHandle = dev->ftdi;
     int result = 0;
     uint32_t received;
 
@@ -265,7 +338,7 @@ int readFromDev(void *handle, uint8_t *buffer, uint32_t bytesToRead) {
 }
 
 // Done
-int writeFrameBuffer(void *handle, uint8_t *frameBuffer, uint16_t frameBufferSize, uint16_t numberOfBytes, uint8_t counter, int flag) {
+int writeFrameBuffer(struct lumax_device *dev, uint8_t *frameBuffer, uint16_t frameBufferSize, uint16_t numberOfBytes, uint8_t counter, int flag) {
 
 #ifdef DEBUG_POSSIBLE
     if (lumax_verbosity & DBG_WRITEFRAMEBUFFER || lumax_verbosity & DBG_ALL)
@@ -276,15 +349,15 @@ int writeFrameBuffer(void *handle, uint8_t *frameBuffer, uint16_t frameBufferSiz
         return 1;
 
     uint8_t writeb[7];
-    writeb[0] = flag ? 1 : BufferLayout;
+    writeb[0] = flag ? 1 : dev->BufferLayout;
     writeb[1] = frameBufferSize;
     writeb[2] = frameBufferSize / 256;
     writeb[3] = numberOfBytes;
     writeb[4] = numberOfBytes / 256;
     writeb[5] = counter;
     writeb[6] = lumax_checksum(writeb, 6);
-    
-    if (writeToDev(handle, writeb, 7) || writeToDev(handle, frameBuffer, numberOfBytes)) {
+
+    if (writeToDev(dev, writeb, 7) || writeToDev(dev, frameBuffer, numberOfBytes)) {
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_WRITEFRAMEBUFFER || lumax_verbosity & DBG_ALL)
             fprintf(stderr, "[ERROR] writeFrameBuffer: writeToDev failed.\n");
@@ -293,7 +366,7 @@ int writeFrameBuffer(void *handle, uint8_t *frameBuffer, uint16_t frameBufferSiz
     }
 
     uint8_t readb[2];
-    if (readFromDev(handle, readb, 2u) || readb[0] != writeb[6] || readb[1] != 0x55) {
+    if (readFromDev(dev, readb, 2u) || readb[0] != writeb[6] || readb[1] != 0x55) {
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_WRITEFRAMEBUFFER || lumax_verbosity & DBG_ALL)
             fprintf(stderr, "[ERROR] writeFrameBuffer: readFromDev failed.\n");
@@ -305,7 +378,7 @@ int writeFrameBuffer(void *handle, uint8_t *frameBuffer, uint16_t frameBufferSiz
 }
 
 // Done
-int readID(void *handle, uint8_t *arr, uint16_t size) {
+int readID(struct lumax_device *dev, uint8_t *arr, uint16_t size) {
     if (!arr) {
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
@@ -315,7 +388,7 @@ int readID(void *handle, uint8_t *arr, uint16_t size) {
     }
 
     uint8_t buffer[7] = {0xc9, 0, 0, 0, 0, 0, 0xc9};
-    if (writeToDev(handle, buffer, 7)) {
+    if (writeToDev(dev, buffer, 7)) {
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
             fprintf(stderr, "[ERROR] readID: write to device failed.\n");
@@ -326,27 +399,27 @@ int readID(void *handle, uint8_t *arr, uint16_t size) {
     usleep(50000u);
     uint8_t lastByte;
     // read back one byte and check start of frame
-    if (readFromDev(handle, &lastByte, 1u) || lastByte != buffer[6]) {
+    if (readFromDev(dev, &lastByte, 1u) || lastByte != buffer[6]) {
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
             fprintf(stderr, "[ERROR] readID: check failed.\n");
 #endif
         return 1;
     }
-            
+
     // read id
-    if (readFromDev(handle, arr, size)) {
+    if (readFromDev(dev, arr, size)) {
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
             fprintf(stderr, "[INFO] readID: no ID available.\n");
 #endif
-        for (int i = 0; i < size; ++i) 
+        for (int i = 0; i < size; ++i)
             arr[i] = 0;
         return 1;
     }
 
     // read checksum
-    if (readFromDev(handle, &lastByte, 1u)) {
+    if (readFromDev(dev, &lastByte, 1u)) {
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
             fprintf(stderr, "[ERROR] readID: read checksum failed.\n");
@@ -367,7 +440,7 @@ int readID(void *handle, uint8_t *arr, uint16_t size) {
 }
 
 // Done
-int readMemory(void *handle, uint8_t *arr, uint16_t start, uint16_t end) {
+int readMemory(struct lumax_device *dev, uint8_t *arr, uint16_t start, uint16_t end) {
     if (!arr) {
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
@@ -394,14 +467,14 @@ int readMemory(void *handle, uint8_t *arr, uint16_t start, uint16_t end) {
     writeb[6] = lumax_checksum(writeb, 6);
     uint8_t readb[522];
 
-    if (writeToDev(handle, writeb, 7) || readFromDev(handle, readb, end + 2)) {
+    if (writeToDev(dev, writeb, 7) || readFromDev(dev, readb, end + 2)) {
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_READMEMORY || lumax_verbosity & DBG_ALL)
             printf("[DEBUG] readMemory: read or write error.\n");
 #endif
         return 1;
     }
-    
+
     for (int i = 0; i < end; ++i)
         arr[i] = readb[i + 1];
     if (readb[0] != writeb[6] || readb[end + 1] != lumax_checksum(arr, end)) {
@@ -411,7 +484,7 @@ int readMemory(void *handle, uint8_t *arr, uint16_t start, uint16_t end) {
 #endif
         return 1;
     }
-    
+
     return 0;
 }
 
@@ -422,7 +495,7 @@ int readMemory(void *handle, uint8_t *arr, uint16_t start, uint16_t end) {
 // the device acks with the single request checksum byte, then answers
 // with 14 bytes: <13 payload bytes> <XOR of payload>.
 // The key buffer is filled by Lumax_DongleCom depending on the flag.
-int dongleCom(void *handle, uint8_t flag, uint32_t address, uint8_t *writeBuffer, uint8_t *readBuffer) {
+int dongleCom(struct lumax_device *dev, uint8_t flag, uint32_t address, uint8_t *writeBuffer, uint8_t *readBuffer) {
     uint8_t writeb[24];
     uint8_t readb[14];
     int result = 1;
@@ -436,10 +509,10 @@ int dongleCom(void *handle, uint8_t flag, uint32_t address, uint8_t *writeBuffer
     for (int i = 0; i < 16; ++i)
         writeb[7 + i] = writeBuffer[i];
     writeb[23] = lumax_checksum(writeb + 7, 16);
-    if (!writeToDev(handle, writeb, 24)
-        && !readFromDev(handle, readb, 1)
+    if (!writeToDev(dev, writeb, 24)
+        && !readFromDev(dev, readb, 1)
         && readb[0] == writeb[6]
-        && !readFromDev(handle, readb, 14)) {
+        && !readFromDev(dev, readb, 14)) {
         if (readb[13] == lumax_checksum(readb, 13)) {
             for (int i = 0; i < 13; ++i)
                 readBuffer[i] = readb[i];
@@ -491,7 +564,14 @@ int Lumax_GetDeviceInfo(int physicalDevice, int infoID, uint8_t *inBuffer, uint1
     if (outLength < count)
         count = outLength;
 
-    void *devHandle = openHandle;
+    struct lumax_device *dev = open_devices[physicalDevice];
+    // a dead handle left behind by a failed busy-recovery (link down) is
+    // unusable: free it and fall through to the on-demand open below
+    if (dev && !dev->ftdi)
+        Lumax_CloseDevice(dev);
+    dev = open_devices[physicalDevice];
+
+    void *devHandle = (void*)dev;
     int opened = 0;
     if (!devHandle) {
         devHandle = Lumax_OpenDevice(physicalDevice, 0);
@@ -500,7 +580,7 @@ int Lumax_GetDeviceInfo(int physicalDevice, int infoID, uint8_t *inBuffer, uint1
             return 1;
     }
 
-    int result = readMemory(devHandle, outBuffer, (uint16_t)infoID, count);
+    int result = readMemory((struct lumax_device*)devHandle, outBuffer, (uint16_t)infoID, count);
     if (opened) {
         // laser safety: blank the beam before closing a handle opened here
         Lumax_StopFrame(devHandle);
@@ -521,7 +601,6 @@ int Lumax_GetPhysicalDevices() {
         if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
             fprintf(stderr, "[ERROR] Lumax_GetPhysicalDevices: ftdi_new failed.\n");
 #endif
-        Lumax_CloseDevice(ftHandle);
         return 0;
     }
 
@@ -530,7 +609,7 @@ int Lumax_GetPhysicalDevices() {
         if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
             fprintf(stderr, "[ERROR] Lumax_GetPhysicalDevices: ftdi_usb_find_all failed: %d (%s)\n", ret, ftdi_get_error_string(ftHandle));
 #endif
-        Lumax_CloseDevice(ftHandle);
+        ftdi_free(ftHandle);
         return 0;
     }
     numberOfDevices = ret;
@@ -540,7 +619,7 @@ int Lumax_GetPhysicalDevices() {
         if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
             fprintf(stderr, "[ERROR] Lumax_GetPhysicalDevices: No device detected.\n");
 #endif
-        Lumax_CloseDevice(ftHandle);
+        ftdi_free(ftHandle);
         return 0;
     }
 
@@ -561,7 +640,7 @@ int Lumax_GetPhysicalDevices() {
                 fprintf(stderr, "[ERROR] Lumax_GetPhysicalDevices: ftdi_usb_get_strings failed: %d (%s)\n", ret, ftdi_get_error_string(ftHandle));
 #endif
             ftdi_list_free(&devlist);
-            Lumax_CloseDevice(ftHandle);
+            ftdi_free(ftHandle);
             return 0;
         }
 
@@ -571,7 +650,7 @@ int Lumax_GetPhysicalDevices() {
                 fprintf(stderr, "[ERROR] Lumax_GetPhysicalDevices: serialnumber empty.\n");
 #endif
             ftdi_list_free(&devlist);
-            Lumax_CloseDevice(ftHandle);
+            ftdi_free(ftHandle);
             return 0;
         }
 
@@ -586,24 +665,23 @@ int Lumax_GetPhysicalDevices() {
             printf("[INFO] Lumax_GetPhysicalDevices: Serialnumber: %s\n", serialnumber);
         }
 #endif
-        // TODO: handle multiple Devices. use first device for now
-        snprintf(SerialNumber, sizeof(SerialNumber), "%s", serialnumber);
         // handle next device
         curdev = curdev->next;
     }
 
     ftdi_list_free(&devlist);
-    Lumax_CloseDevice(ftHandle);
+    ftdi_free(ftHandle);
     return numberOfDevices;
 }
 
 // Done
 int Lumax_SetTTL(void *handle, uint8_t TTL) {
-    if (isOpen(&handle))
+    struct lumax_device *dev = (struct lumax_device*)handle;
+    if (isOpen(dev))
         return 1; // device is not open
 
-    TTLBuffer = TTL;
-    TTLAvailable |= 2u;
+    dev->TTLBuffer = TTL;
+    dev->TTLAvailable |= 2u;
 
     uint8_t buffer[7];
     buffer[0] = 0x1E;
@@ -614,7 +692,7 @@ int Lumax_SetTTL(void *handle, uint8_t TTL) {
     buffer[5] = 0;
     buffer[6] = lumax_checksum(buffer, 6);
     uint8_t lastByte;
-    if (writeToDev(handle, buffer, 7) || readFromDev(handle, &lastByte, 1u) || lastByte != buffer[6])
+    if (writeToDev(dev, buffer, 7) || readFromDev(dev, &lastByte, 1u) || lastByte != buffer[6])
         return 1;
 
     return 0;
@@ -629,7 +707,8 @@ int Lumax_SetTTL(void *handle, uint8_t TTL) {
 // The original gates both modes on (flags[52] & 8) == 0; flags[52] is 0xff
 // on supported cards, so the gate never triggers and is omitted.
 int Lumax_WaitForBuffer(void* handle, int timeOut, int *timeToWait, int *bufferChanged) {
-    if (isOpen(&handle))
+    struct lumax_device *dev = (struct lumax_device*)handle;
+    if (isOpen(dev))
         return 1; // device is closed
 
     int queryMode = (timeOut == 0) && timeToWait != NULL && bufferChanged != NULL;
@@ -641,24 +720,24 @@ int Lumax_WaitForBuffer(void* handle, int timeOut, int *timeToWait, int *bufferC
     int result = 0;
 
     if (queryMode) {
-        result = writeToDev(handle, writeb, 7u)
-              || readFromDev(handle, readb, 4u)
+        result = writeToDev(dev, writeb, 7u)
+              || readFromDev(dev, readb, 4u)
               || readb[0] != writeb[6];
         if (!result) {
             uint8_t status = readb[3];
             int changed = (status & 0x80u) == 0;
             *bufferChanged = changed;
             uint32_t chunks = status & 0x7fu;
-            uint32_t points = (chunks ? (chunks - 1u) * (uint32_t)MaxPoints : 0u)
+            uint32_t points = (chunks ? (chunks - 1u) * (uint32_t)dev->MaxPoints : 0u)
                             + ((uint32_t)readb[2] << 8) + readb[1];
-            uint32_t divisor = changed ? ScanSpeed : LastDivisor;
+            uint32_t divisor = changed ? dev->ScanSpeed : dev->LastDivisor;
             if (!divisor)
                 divisor = 1000;
             *timeToWait = (int)(points * 1000u / divisor);
         }
     } else {
-        result = writeToDev(handle, writeb, 7u)
-              || readFromDev(handle, readb, 2u)
+        result = writeToDev(dev, writeb, 7u)
+              || readFromDev(dev, readb, 2u)
               || readb[0] != writeb[6]
               || readb[1] != 1;
         if (bufferChanged)
@@ -672,25 +751,30 @@ int Lumax_WaitForBuffer(void* handle, int timeOut, int *timeToWait, int *bufferC
         // A timed-out read may have consumed only part of the device's
         // reply (or none at all); drop whatever is left in the RX FIFO
         // so the stray bytes cannot desync the next exchange.
-        ftdi_tciflush((struct ftdi_context*)handle);
+        ftdi_tciflush(dev->ftdi);
 
     return result;
 }
 
 // Done
 int Lumax_CloseDevice(void* handle) {
-    struct ftdi_context *ftHandle = (struct ftdi_context*)handle;
-    if (!ftHandle)
+    struct lumax_device *dev = (struct lumax_device*)handle;
+    if (!dev)
         return 1;
 #ifdef DEBUG_POSSIBLE
     if (lumax_verbosity & DBG_GENERAL || lumax_verbosity & DBG_ALL)
-        printf("[DEBUG] Lumax_CloseDevice: Closing device with handle 0x%x.\n", (unsigned int)(uintptr_t)ftHandle);
+        printf("[DEBUG] Lumax_CloseDevice: Closing device with handle 0x%x.\n", (unsigned int)(uintptr_t)dev);
 #endif
-    clearBuffer(ftHandle);
-    int ret = ftdi_usb_close(ftHandle);
-    if (ftHandle) ftdi_free(ftHandle);
-    if (openHandle == ftHandle)
-        openHandle = NULL;
+    int ret = 0;
+    if (dev->ftdi) {
+        clearBuffer(dev);
+        ret = ftdi_usb_close(dev->ftdi);
+        ftdi_free(dev->ftdi);
+        dev->ftdi = NULL;
+    }
+    if (dev->numDev >= 1 && dev->numDev <= 8 && open_devices[dev->numDev] == dev)
+        open_devices[dev->numDev] = NULL;
+    free(dev);
     return ret;
 }
 
@@ -715,6 +799,7 @@ static void makeBlankPoint(const TLumax_Point *src, TLumax_Point *dst) {
 
 // Done
 int Lumax_SendFrame(void *handle, TLumax_Point *points, int numOfPoints, int scanSpeed, int updateMode, int *timeToWait) {
+    struct lumax_device *dev = (struct lumax_device*)handle;
     // variables
     // worst case is 9 bytes per point (Flavor 16), MaxPoints (4500) per chunk
     uint8_t writeb[MaxFrameBytes];
@@ -784,7 +869,7 @@ int Lumax_SendFrame(void *handle, TLumax_Point *points, int numOfPoints, int sca
 #endif
 
     // fill the buffer and send to device
-    if (isOpen(&handle)) { // device is open
+    if (isOpen(dev)) { // device is open
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_WARN || lumax_verbosity & DBG_ALL)
             fprintf(stderr, "[WARN] Lumax_SendFrame: device is closed.\n");
@@ -808,7 +893,7 @@ int Lumax_SendFrame(void *handle, TLumax_Point *points, int numOfPoints, int sca
         numOfPoints = 1;
     }
 
-    if (!lpoints || numOfPoints <= 0 || numOfPoints > 16 * MaxPoints / 2) {
+    if (!lpoints || numOfPoints <= 0 || numOfPoints > 16 * dev->MaxPoints / 2) {
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_WARN || lumax_verbosity & DBG_ALL)
             fprintf(stderr, "[WARN] Lumax_SendFrame: numOfPoints invalid.\n");
@@ -817,25 +902,25 @@ int Lumax_SendFrame(void *handle, TLumax_Point *points, int numOfPoints, int sca
     }
 
     if (scanSpeed < MinScanSpeed) scanSpeed = MinScanSpeed;
-    else if (scanSpeed > MaxScanSpeed) scanSpeed = MaxScanSpeed;
-    ++NumberOfFramesSend;
-    NumberOfPoints = numOfPoints;
-    ScanSpeed = scanSpeed;
-    TimeOffset = 0;
-    uint16_t maxLoops = numOfPoints / MaxPoints;
-    uint16_t residual = numOfPoints % MaxPoints;
+    else if (scanSpeed > dev->MaxScanSpeed) scanSpeed = dev->MaxScanSpeed;
+    ++dev->NumberOfFramesSend;
+    dev->NumberOfPoints = numOfPoints;
+    dev->ScanSpeed = scanSpeed;
+    dev->TimeOffset = 0;
+    uint16_t maxLoops = numOfPoints / dev->MaxPoints;
+    uint16_t residual = numOfPoints % dev->MaxPoints;
     if (residual) ++maxLoops;
-    
+
 #ifdef DEBUG_POSSIBLE
     if (lumax_verbosity & DBG_SENDFRAME || lumax_verbosity & DBG_ALL) {
-        printf("[DEBUG] Lumax_SendFrame: maxLoops = %d, residual = %d, TTLAvailable = %d.\n", maxLoops, residual, TTLAvailable);
+        printf("[DEBUG] Lumax_SendFrame: maxLoops = %d, residual = %d, TTLAvailable = %d.\n", maxLoops, residual, dev->TTLAvailable);
     }
 #endif
 
     // TTL mode for Flavor 1, see lumax_pack_point():
     //   1 = per-point TTL, 2 = global TTL (TTLBuffer, set via Lumax_SetTTL).
     // The original driver always sends 7-byte points for Flavor 1.
-    uint32_t ttlMode = (Flavor == 1 && (TTLAvailable & 2u)) ? 2 : 1;
+    uint32_t ttlMode = (dev->Flavor == 1 && (dev->TTLAvailable & 2u)) ? 2 : 1;
 
     // big loop to fill the buffer
     int readOK;
@@ -843,12 +928,12 @@ int Lumax_SendFrame(void *handle, TLumax_Point *points, int numOfPoints, int sca
     for (int i = 0; i < maxLoops; ++i) {
         // The first chunk carries the residual points. If there is no residual,
         // all chunks are full (an empty first chunk would be rejected).
-        int pointsPerLoop = (i == 0 && residual != 0) ? residual : MaxPoints;
+        int pointsPerLoop = (i == 0 && residual != 0) ? residual : dev->MaxPoints;
         int k = 0;
         for (int j = 0; j < pointsPerLoop; ++j)
-            k += (int)lumax_pack_point(Flavor, ttlMode, &lpoints[npoint++], TTLBuffer, writeb + k);
+            k += (int)lumax_pack_point(dev->Flavor, ttlMode, &lpoints[npoint++], dev->TTLBuffer, writeb + k);
         // write to Device
-        readOK = writeFrameBuffer(handle, writeb, 32768, k, NextLoopCounts + i, 0);
+        readOK = writeFrameBuffer(dev, writeb, 32768, k, dev->NextLoopCounts + i, 0);
         if (readOK) break;
     }
 
@@ -860,35 +945,35 @@ int Lumax_SendFrame(void *handle, TLumax_Point *points, int numOfPoints, int sca
         writeb[2] = residual / 256;
         writeb[3] = cycles;
         writeb[4] = cycles / 256;
-        writeb[5] = NextLoopCounts + 16 * (maxLoops - 1);
+        writeb[5] = dev->NextLoopCounts + 16 * (maxLoops - 1);
         writeb[6] = lumax_checksum(writeb, 6);
-        readOK = writeToDev(handle, writeb, 7u);
+        readOK = writeToDev(dev, writeb, 7u);
         if (!readOK) {
             uint8_t readb[4];
-            readOK = readFromDev(handle, readb, 4u);
+            readOK = readFromDev(dev, readb, 4u);
             if (!readOK && readb[0] == writeb[6]) {
                 // high bit set: device reports how long it will be busy
                 if ((readb[3] & 128) == 0) {
-                    TimeUntilFree = 0;
+                    dev->TimeUntilFree = 0;
                 } else {
                     readb[3] &= 127;
-                    TimeUntilFree = readb[1] + (readb[2] << 8) + MaxPoints * (readb[3] - 1);
-                    TimeUntilFree = 1000 * TimeUntilFree / ScanSpeed;
+                    dev->TimeUntilFree = readb[1] + (readb[2] << 8) + dev->MaxPoints * (readb[3] - 1);
+                    dev->TimeUntilFree = 1000 * dev->TimeUntilFree / dev->ScanSpeed;
                 }
-                TimeOffset = 1000 * numOfPoints / scanSpeed; // die zu erwartende Zeit, bis der nächste Frame gesendet werden kann
-                LastDivisor = scanSpeed; // flags[45] folgt flags[46] (ScanSpeed)
+                dev->TimeOffset = 1000 * numOfPoints / scanSpeed; // die zu erwartende Zeit, bis der nächste Frame gesendet werden kann
+                dev->LastDivisor = scanSpeed; // flags[45] folgt flags[46] (ScanSpeed)
 #ifdef DEBUG_POSSIBLE
                 if (lumax_verbosity & DBG_SENDFRAME || lumax_verbosity & DBG_ALL)
-                    printf("[DEBUG] Lumax_SendFrame: TimeOffset = %d\n", TimeOffset);
+                    printf("[DEBUG] Lumax_SendFrame: TimeOffset = %d\n", dev->TimeOffset);
 #endif
                 if (timeToWait)
-                    *timeToWait = TimeUntilFree;
+                    *timeToWait = dev->TimeUntilFree;
             }
         }
-        if (NextLoopCounts)
-            NextLoopCounts = 0;
+        if (dev->NextLoopCounts)
+            dev->NextLoopCounts = 0;
         else
-            NextLoopCounts = 8;
+            dev->NextLoopCounts = 8;
     }
 
     return readOK;
@@ -898,14 +983,15 @@ int Lumax_SendFrame(void *handle, TLumax_Point *points, int numOfPoints, int sca
 // Original: send the empty (blank) frame, then wait for the device buffer
 // to be free before reporting success.
 int Lumax_StopFrame(void* handle) {
+    struct lumax_device *dev = (struct lumax_device*)handle;
     // Drop stale bytes from the FTDI RX FIFO first (e.g. a late 0x04
     // reply from a wait that timed out mid-reply). If such a byte is
     // still there when the blank frame is acked, the ack read returns
     // <stale> <xor> instead of <xor> 55, writeFrameBuffer fails and the
     // frame terminator is never sent - the card then keeps playing the
     // old frame and the beam stays on.
-    if (handle)
-        ftdi_tciflush((struct ftdi_context*)handle);
+    if (dev && dev->ftdi)
+        ftdi_tciflush(dev->ftdi);
     int result = Lumax_SendFrame(handle, NULL, 0, 0, 0, NULL);
     if (result)
         return result;
@@ -936,7 +1022,8 @@ static int dongleStatus(int flag, const uint8_t *readb) {
 // int* in the public API, but several flags use them as (or into) a
 // 16-byte key buffer or multi-dword values — the caller decides.
 int Lumax_DongleCom(void* handle, int flag, int address, int *writeVar, int *readVar) {
-    if (!handle)
+    struct lumax_device *dev = (struct lumax_device*)handle;
+    if (!dev || !dev->ftdi)
         return 1;
 
     uint8_t writeb[16]; // 16-byte key buffer
@@ -1001,7 +1088,7 @@ int Lumax_DongleCom(void* handle, int flag, int address, int *writeVar, int *rea
         return 1;
     }
 
-    if (dongleCom(handle, (uint8_t)flag, addr, writeb, readb))
+    if (dongleCom(dev, (uint8_t)flag, addr, writeb, readb))
         return 1;
 
     int result = dongleStatus(flag, readb);
@@ -1050,16 +1137,16 @@ int Lumax_DongleCom(void* handle, int flag, int address, int *writeVar, int *rea
 
 // Done
 // 0x09 "init key" frame; only sent on Bare-Lumax cards (DmxFlavorMask != 0).
-int sendInitKey(void *handle) {
-    if (isOpen(&handle))
+int sendInitKey(struct lumax_device *dev) {
+    if (isOpen(dev))
         return 1; // device is closed
-    if (DmxFlavorMask == 0)
+    if (dev->DmxFlavorMask == 0)
         return 1;
 
     uint8_t writeb[7] = {0x09, 0, 0, 0, 0, 0, 0};
     writeb[6] = lumax_checksum(writeb, 6);
     uint8_t readb;
-    if (writeToDev(handle, writeb, 7u) || readFromDev(handle, &readb, 1u) || readb != writeb[6])
+    if (writeToDev(dev, writeb, 7u) || readFromDev(dev, &readb, 1u) || readb != writeb[6])
         return 1;
     return 0;
 }
@@ -1068,11 +1155,11 @@ int sendInitKey(void *handle) {
 // 0x07 "key" frame that selects the Flavor on Bare-Lumax cards.
 // On a plain LaserWorld Lumax card DmxFlavorMask is 0, so this is a no-op
 // that sends nothing — matching the original wire behavior.
-int sendKey(void *handle, int flavor) {
-    if (isOpen(&handle))
+int sendKey(struct lumax_device *dev, int flavor) {
+    if (isOpen(dev))
         return 1; // device is closed
 
-    int value = flavor & (DmxFlavorMask ? DmxFlavorMask : 1);
+    int value = flavor & (dev->DmxFlavorMask ? dev->DmxFlavorMask : 1);
     if (value == 0)
         value = 1;
 
@@ -1088,10 +1175,10 @@ int sendKey(void *handle, int flavor) {
     }
 
     // no DMX/flavor selection on a plain Lumax: nothing goes on the wire
-    if (DmxFlavorMask == 0)
+    if (dev->DmxFlavorMask == 0)
         return 0;
 
-    if (sendInitKey(handle))
+    if (sendInitKey(dev))
         return 1;
 
     uint32_t pointsPerChunk = 31500u / (uint32_t)divisor;
@@ -1100,14 +1187,14 @@ int sendKey(void *handle, int flavor) {
     writeb[6] = lumax_checksum(writeb, 6);
     uint8_t readb[2];
     // the device echoes back the raw (unmasked) flavor parameter
-    if (writeToDev(handle, writeb, 7u) || readFromDev(handle, readb, 2u)
+    if (writeToDev(dev, writeb, 7u) || readFromDev(dev, readb, 2u)
         || readb[0] != writeb[6] || readb[1] != (uint8_t)flavor)
         return 1;
 
-    // accepted: update the module state the original would have set
-    Flavor = value;
-    MaxPoints = (int)pointsPerChunk;
-    MaxScanSpeed = (int)maxScan;
+    // accepted: update the device state the original would have set
+    dev->Flavor = value;
+    dev->MaxPoints = (int)pointsPerChunk;
+    dev->MaxScanSpeed = (int)maxScan;
     return 0;
 }
 
@@ -1117,7 +1204,8 @@ int sendKey(void *handle, int flavor) {
 // "off" nibble set (byte 5: 0x10 TX / 0x11 RX). The device acks with the
 // single checksum byte.
 int Lumax_SetDmxMode(void *handle, int numOfTxChannels, int numOfRxChannels) {
-    if (isOpen(&handle))
+    struct lumax_device *dev = (struct lumax_device*)handle;
+    if (isOpen(dev))
         return 1; // device is closed
 
     // The original also bails out when DMX is already active; that state is
@@ -1145,7 +1233,7 @@ int Lumax_SetDmxMode(void *handle, int numOfTxChannels, int numOfRxChannels) {
         writeb[4] = 0xfb;
         writeb[5] = (uint8_t)((off << 4) | rx);
         writeb[6] = lumax_checksum(writeb, 6);
-        if (writeToDev(handle, writeb, 7u) || readFromDev(handle, &readb, 1u) || readb != writeb[6])
+        if (writeToDev(dev, writeb, 7u) || readFromDev(dev, &readb, 1u) || readb != writeb[6])
             result = 1;
     }
 
@@ -1162,18 +1250,21 @@ int Lumax_SetDmxMode(void *handle, int numOfTxChannels, int numOfRxChannels) {
 // without cleanup, kill of the process, ...), the card would otherwise
 // keep playing the last frame — with the beam on. On the first
 // successful open we install an atexit handler plus signal handlers that
-// blank the beam, switch the TTL outputs off and close the device, so
-// the card is left in the same state as after a
+// blank the beam, switch the TTL outputs off and close every open device,
+// so all cards are left in the same state as after a
 // Lumax_StopFrame + Lumax_CloseDevice pair.
 static int exitSafetyInstalled = 0;
 
 static void lumaxEmergencyStop(void) {
-    if (!openHandle)
-        return;
-    IsBusy = 0; // never trigger isOpen's busy-recovery (no re-open here)
-    Lumax_StopFrame(openHandle);
-    Lumax_SetTTL(openHandle, 0);
-    Lumax_CloseDevice(openHandle);
+    for (int i = 1; i <= 8; ++i) {
+        struct lumax_device *dev = open_devices[i];
+        if (!dev)
+            continue;
+        dev->IsBusy = 0; // never trigger isOpen's busy-recovery (no re-open here)
+        Lumax_StopFrame(dev);
+        Lumax_SetTTL(dev, 0);
+        Lumax_CloseDevice(dev); // also unregisters dev from open_devices[i]
+    }
 }
 
 static void lumaxAtExitStop(void) {
@@ -1197,30 +1288,37 @@ static void installExitSafety(void) {
     signal(SIGQUIT, lumaxSignalStop);
 }
 
-void* Lumax_OpenDevice(int numDev, int channel) {
-    uint32_t ftStatus;
-    struct ftdi_context *ftHandle;
+// Done
+// Full open handshake on an already-open dev->ftdi (dev->serial must be
+// set so the card can be cycled). Fresh opens and the busy-recovery path
+// both run this, so the card always ends up in the same known state:
+// beam stopped, DMX off, TTL off. Returns 0 only if every step succeeded.
+int lumax_init_device(struct lumax_device *dev) {
+    // re-derive all per-card state from the card. Resetting first keeps
+    // re-initialization idempotent: in the single-device design
+    // TTLAvailable was only ever |= (and the other settings only ever
+    // set-if-condition), so stale values leaked across opens.
+    dev->BufferLayout = 1;
+    dev->TTLBuffer = 0;
+    dev->TTLAvailable = 0;
+    dev->Flavor = 1;
+    dev->MaxPoints = 4500;
+    dev->MaxScanSpeed = 70000;
+    dev->DmxFlavorMask = 0;
+    dev->NextLoopCounts = 0;
+    dev->TimeUntilFree = 0;
+    dev->TimeOffset = 0;
+    dev->NumberOfFramesSend = 0;
+    dev->ScanSpeed = 1000;
+    dev->LastDivisor = 1000;
+    dev->NumberOfPoints = 0;
+    dev->IsBusy = 0;
+    dev->BusyTime = 0;
 
-    if (((numDev < 1) || (numDev > 8)) || (channel != 0)) {
-#ifdef DEBUG_POSSIBLE
-        if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
-            fprintf(stderr, "[ERROR] Lumax_OpenDevice: numDev or channel invalid.\n");
-#endif
-        return NULL;
-    }
-        
-    if (openDev(numDev, (void**)&ftHandle)) {
-#ifdef DEBUG_POSSIBLE
-        if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
-            fprintf(stderr, "[ERROR] Lumax_OpenDevice: openDev failed.\n");
-#endif
-        return NULL;
-    }
-
-    clearBuffer(ftHandle);
+    clearBuffer(dev);
     const uint8_t idSize = 16;
     uint8_t id[16] = {0}; // zeroed so a failed readID cannot leave garbage in id[4]
-    if (readID(ftHandle, id, idSize)) {
+    if (readID(dev, id, idSize)) {
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_WARN || lumax_verbosity & DBG_ALL)
             printf("[WARN] Lumax_OpenDevice: readID failed.\n");
@@ -1240,7 +1338,7 @@ void* Lumax_OpenDevice(int numDev, int channel) {
         if (lumax_verbosity & DBG_OPENDEVICE || lumax_verbosity & DBG_ALL)
             printf("[DEBUG] Lumax_OpenDevice: setting flag TTLAvailable.\n");
 #endif
-        TTLAvailable |= 1u;
+        dev->TTLAvailable |= 1u;
     }
 
     if (id[4] >= 7u) {
@@ -1248,12 +1346,12 @@ void* Lumax_OpenDevice(int numDev, int channel) {
         if (lumax_verbosity & DBG_OPENDEVICE || lumax_verbosity & DBG_ALL)
             printf("[DEBUG] Lumax_OpenDevice: setting flag BufferLayout = 5.\n");
 #endif
-        BufferLayout = 5;
+        dev->BufferLayout = 5;
     }
 
     const uint16_t devSize = 0x1cf;
     uint8_t deviceInfo[0x1cf];
-    if (!readMemory(ftHandle, deviceInfo, 0, devSize)) {
+    if (!readMemory(dev, deviceInfo, 0, devSize)) {
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_OPENDEVICE || lumax_verbosity & DBG_ALL) {
             printf("[DEBUG] Lumax_OpenDevice: read device Info successfully.\n");
@@ -1267,56 +1365,85 @@ void* Lumax_OpenDevice(int numDev, int channel) {
         // id[4] > 6; we keep it for all cards because the dongle exchange
         // is required to open our (id[4] <= 6) card on real hardware.
         int ret = 0;
-        int dongleOK = (Lumax_DongleCom(ftHandle, 1, 0x49D4B13Au, NULL, &ret) == 0);
+        int dongleOK = (Lumax_DongleCom(dev, 1, 0x49D4B13Au, NULL, &ret) == 0);
         // Flavor selection (0x09/0x07) — a no-op on plain Lumax cards.
         if (dongleOK)
-            sendKey(ftHandle, Flavor);
+            sendKey(dev, dev->Flavor);
     }
 
 #ifdef DEBUG_POSSIBLE
     if (lumax_verbosity & DBG_GENERAL || lumax_verbosity & DBG_ALL) {
         printf("[DEBUG] Lumax_OpenDevice: opened Lumax device with the following settings:\n");
-        printf("            BufferLayout = %d\n", BufferLayout);
-        printf("            TTLAvailable = %d\n", TTLAvailable);
-        printf("            Flavor       = %d\n", Flavor);
+        printf("            BufferLayout = %d\n", dev->BufferLayout);
+        printf("            TTLAvailable = %d\n", dev->TTLAvailable);
+        printf("            Flavor       = %d\n", dev->Flavor);
     }
 #endif
 
     // The original runs this tail sequentially and stops at the first
     // failure; the device is only reported opened when everything
     // succeeded.
-    int result = Lumax_StopFrame(ftHandle);
+    int result = Lumax_StopFrame(dev);
     if (result) {
         // A previous host that was killed or crashed (no StopFrame on
         // exit) can leave the card mid-frame; after the USB disconnect
         // the card then does not answer the 0x04 wait of the stop frame
         // until it has been cycled again (see PROTOCOL.md, "Observed
         // device behavior"). Close and re-open once, then retry.
-        Lumax_CloseDevice(ftHandle);
-        if (openDev(numDev, (void**)&ftHandle)) {
+        dev->IsBusy = 0;
+        ftdi_usb_close(dev->ftdi);
+        ftdi_free(dev->ftdi);
+        dev->ftdi = NULL;
+        if (openDevBySerial(dev->serial, dev)) {
 #ifdef DEBUG_POSSIBLE
             if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
                 fprintf(stderr, "[ERROR] Lumax_OpenDevice: re-open after failed stop frame failed.\n");
 #endif
-            return NULL;
+            return 1;
         }
-        clearBuffer(ftHandle);
-        result = Lumax_StopFrame(ftHandle);
+        clearBuffer(dev);
+        result = Lumax_StopFrame(dev);
     }
     if (!result)
-        result = Lumax_SetDmxMode(ftHandle, 0, 0); // schaltet DMX aus
+        result = Lumax_SetDmxMode(dev, 0, 0); // schaltet DMX aus
     if (!result)
-        result = Lumax_SetTTL(ftHandle, 0);
-    if (result) {
+        result = Lumax_SetTTL(dev, 0);
+    return result;
+}
+
+void* Lumax_OpenDevice(int numDev, int channel) {
+    if (((numDev < 1) || (numDev > 8)) || (channel != 0)) {
+#ifdef DEBUG_POSSIBLE
+        if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
+            fprintf(stderr, "[ERROR] Lumax_OpenDevice: numDev or channel invalid.\n");
+#endif
+        return NULL;
+    }
+
+    struct lumax_device *dev = (struct lumax_device*)calloc(1, sizeof(*dev));
+    if (!dev)
+        return NULL;
+    dev->numDev = numDev;
+
+    if (openDev(numDev, dev)) {
+#ifdef DEBUG_POSSIBLE
+        if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
+            fprintf(stderr, "[ERROR] Lumax_OpenDevice: openDev failed.\n");
+#endif
+        free(dev);
+        return NULL;
+    }
+
+    if (lumax_init_device(dev)) {
 #ifdef DEBUG_POSSIBLE
         if (lumax_verbosity & DBG_ERROR || lumax_verbosity & DBG_ALL)
             fprintf(stderr, "[ERROR] Lumax_OpenDevice: device initialization failed.\n");
 #endif
-        Lumax_CloseDevice(ftHandle);
+        Lumax_CloseDevice(dev);
         return NULL;
     }
 
+    open_devices[numDev] = dev;
     installExitSafety();
-    openHandle = ftHandle;
-    return ftHandle;
+    return (void*)dev;
 }
